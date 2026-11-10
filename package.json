@@ -1,6 +1,6 @@
 {
   "name": "hsa-locker",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Keep every medical receipt and EOB for your HSA in one place you host yourself on Cloudflare.",
   "license": "MIT",
