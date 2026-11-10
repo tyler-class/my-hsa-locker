@@ -15,22 +15,22 @@
   "d1_databases": [
     {
       // No database_id: the Deploy button and `wrangler deploy` provision it automatically.
-      "binding": "DB",
+      "binding": "DB", "database_id": "3e5e8fe5-58ca-4e37-adef-53afb94583ee",
       "database_name": "my-hsa-locker",
-      "migrations_dir": "migrations","database_id": "3e5e8fe5-58ca-4e37-adef-53afb94583ee",
+      "migrations_dir": "migrations",
     },
   ],
   "r2_buckets": [
     {
       // Original receipts, EOBs and the emails they arrived in. Private: served only through
       // /api/files/:id to signed-in users. No bucket_name: provisioned automatically on deploy.
-      "binding": "FILES","bucket_name": "my-hsa-locker","preview_bucket_name": "my-hsa-locker",
+      "binding": "FILES", "bucket_name": "my-hsa-locker",
     },
   ],
   "kv_namespaces": [
     {
       // Sign-ins for AI assistants connected over MCP. Provisioned automatically on deploy.
-      "binding": "OAUTH_KV","id": "dbb34d407f9143f5be69b0e4c186ced1",
+      "binding": "OAUTH_KV", "id": "dbb34d407f9143f5be69b0e4c186ced1",
     },
   ],
   // Workers AI reads documents. Always runs on Cloudflare, even in `npm run dev`.
