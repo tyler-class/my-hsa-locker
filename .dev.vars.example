@@ -1,0 +1,8 @@
+# The one password your household uses to sign in to HSA Locker.
+APP_PASSWORD=change-me-to-something-long
+
+# Optional: read documents with your own model provider instead of Workers AI.
+# Contents are health information and are sent to that provider.
+# LLM_PROVIDER=anthropic   # anthropic | openai | gemini
+# LLM_API_KEY=
+# LLM_MODEL=

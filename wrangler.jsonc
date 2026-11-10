@@ -1,0 +1,44 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "my-hsa-locker",
+  "main": "./src/worker/index.ts",
+  "compatibility_date": "2026-10-19",
+  // Needed for OAuth clients that identify themselves with a metadata URL.
+  "compatibility_flags": ["global_fetch_strictly_public"],
+  "observability": { "enabled": true },
+  "upload_source_maps": true,
+  "assets": {
+    // Static SPA. Unknown paths fall back to index.html; API and MCP always reach the Worker.
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/authorize", "/oauth/*", "/.well-known/*"],
+  },
+  "d1_databases": [
+    {
+      // No database_id: the Deploy button and `wrangler deploy` provision it automatically.
+      "binding": "DB",
+      "database_name": "my-hsa-locker",
+      "migrations_dir": "migrations","database_id": "3e5e8fe5-58ca-4e37-adef-53afb94583ee",
+    },
+  ],
+  "r2_buckets": [
+    {
+      // Original receipts, EOBs and the emails they arrived in. Private: served only through
+      // /api/files/:id to signed-in users. No bucket_name: provisioned automatically on deploy.
+      "binding": "FILES","bucket_name": "my-hsa-locker","preview_bucket_name": "my-hsa-locker",
+    },
+  ],
+  "kv_namespaces": [
+    {
+      // Sign-ins for AI assistants connected over MCP. Provisioned automatically on deploy.
+      "binding": "OAUTH_KV","id": "dbb34d407f9143f5be69b0e4c186ced1",
+    },
+  ],
+  // Workers AI reads documents. Always runs on Cloudflare, even in `npm run dev`.
+  "ai": { "binding": "AI" },
+  // Sends the optional daily review reminder. Only to addresses verified in Email Routing
+  // (Destination addresses), which is free on every plan and needs no extra DNS.
+  "send_email": [{ "name": "EMAIL" }],
+  // Picks up documents waiting to be read, stuck, or due for a retry; then sends push
+  // notifications still due (the sent log keeps each one to once, however often this runs).
+  "triggers": { "crons": ["*/10 * * * *"] },
+}
