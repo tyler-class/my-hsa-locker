@@ -33,11 +33,14 @@ export function LedgerFilters({
   setFilter,
   state,
   years,
+  counts,
 }: {
   filter: LedgerFilter;
   setFilter: (patch: Partial<LedgerFilter>) => void;
   state: AppState;
   years: string[];
+  /** How many entries each status choice would show, with the other filters applied. */
+  counts?: Record<StatusFilter, number>;
 }) {
   const [open, setOpen] = useState(false);
   const yearValue = filter.year === null || filter.year === undefined ? '' : String(filter.year);
@@ -68,7 +71,17 @@ export function LedgerFilters({
         label="Status"
         value={filter.status ?? 'all'}
         onChange={(status) => setFilter({ status })}
-        options={STATUS_TABS}
+        options={STATUS_TABS.map(([k, label]) => [
+          k,
+          counts ? (
+            <>
+              {label}
+              <span className="text-xs font-normal opacity-70 tnum">{counts[k]}</span>
+            </>
+          ) : (
+            label
+          ),
+        ])}
       />
 
       <div className="flex items-center gap-2">

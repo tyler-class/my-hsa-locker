@@ -18,7 +18,7 @@ import {
 import { api } from '../lib/api';
 import { formatDate, money, plural } from '../lib/format';
 import { useAppState, useDocument, useReview } from '../lib/queries';
-import { useSave } from '../lib/useSave';
+import { useSave, useUndo } from '../lib/useSave';
 import { useViewer } from '../lib/viewer';
 import { Select } from '../components/Select';
 
@@ -35,7 +35,7 @@ export function Review() {
     return (
       <div>
         <PageHeader title="Review" icon="search" />
-        <Empty title="All caught up">
+        <Empty title="All caught up" icon="check">
           Nothing is waiting for review. Documents that need a look show up here.
         </Empty>
       </div>
@@ -210,6 +210,7 @@ function ReviewEntry({ entry, state }: { entry: Entry; state: AppState }) {
   const [formError, setFormError] = useState('');
   const { run, busy, error } = useSave();
   const toast = useToast();
+  const undo = useUndo();
 
   async function approve() {
     const { body, error } = bodyFromForm(form);
@@ -270,7 +271,10 @@ function ReviewEntry({ entry, state }: { entry: Entry; state: AppState }) {
           icon="trash"
           className="mr-auto -ml-3 text-danger"
           disabled={busy}
-          onClick={() => confirm('Delete this line?') && run(() => api.del(`/entries/${entry.id}`))}
+          onClick={async () => {
+            if (await run(() => api.del(`/entries/${entry.id}`)))
+              undo('Line deleted', () => api.post('/entries/restore', entry));
+          }}
         >
           Delete line
         </GhostButton>

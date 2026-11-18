@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import type { LedgerEntry } from '@shared/types';
+import type { LedgerEntry, Reimbursement } from '@shared/types';
 import { api } from '../lib/api';
 import { money } from '../lib/format';
-import { useSave } from '../lib/useSave';
-import { useToast } from './Toast';
+import { useSave, useUndo } from '../lib/useSave';
 import { ErrorText, FieldRow, GhostButton, PrimaryButton, Sheet, TextInput } from './ui';
 
 /** Record an HSA withdrawal that covers the selected receipts. */
@@ -19,7 +18,7 @@ export function ReimburseSheet({
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [note, setNote] = useState('');
   const { run, busy, error } = useSave();
-  const toast = useToast();
+  const undo = useUndo();
   if (!entries) return null;
   const eligible = entries.filter((e) => e.type === 'receipt' && !e.reimbursement_id);
   const skipped = entries.length - eligible.length;
@@ -37,14 +36,16 @@ export function ReimburseSheet({
             disabled={busy || !eligible.length || !date}
             onClick={async () => {
               const r = await run(() =>
-                api.post('/reimbursements', {
+                api.post<Reimbursement>('/reimbursements', {
                   date,
                   note: note.trim() || null,
                   entry_ids: eligible.map((e) => e.id),
                 }),
               );
               if (r) {
-                toast({ text: `Recorded ${money(total)} reimbursed` });
+                undo(`Recorded ${money(total)} reimbursed`, () =>
+                  api.del(`/reimbursements/${r.id}`),
+                );
                 onDone?.();
                 onClose();
               }

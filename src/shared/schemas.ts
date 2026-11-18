@@ -128,6 +128,20 @@ export const entryFields = z.object({
 });
 export const entryPatch = entryFields;
 export const entryCreate = entryFields.extend({ type: z.enum(['receipt', 'eob']) });
+/** A deleted entry put back as it was (the Undo after a delete). */
+export const entryRestore = entryCreate.extend({
+  id: z.string().min(1).max(64),
+  document_id: z.string().min(1).max(64),
+  patient_name_raw: z.string().max(300).nullable().optional(),
+  provider_name_raw: z.string().max(300).nullable().optional(),
+  confidence: z.number().min(0).max(1).nullable().optional(),
+  source_quote: z.string().max(2000).nullable().optional(),
+  review_reasons: z.array(z.string().max(60)).max(20).optional(),
+  reviewed_at: z.string().max(40).nullable().optional(),
+  excluded_auto: z.boolean().optional(),
+  sort_order: z.number().int().min(0).max(10_000).optional(),
+  created_at: z.string().max(40).optional(),
+});
 
 export const idList = z.array(z.string().min(1)).min(1).max(1000);
 

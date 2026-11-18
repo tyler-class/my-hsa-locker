@@ -3,7 +3,7 @@ import { EXCLUDED_REASONS } from '@shared/lookups';
 import { matchProvider } from '@shared/logic';
 import type { AppState, Entry, ExcludedReason } from '@shared/types';
 import { centsInput, parseTypedMoney } from '../lib/format';
-import { ErrorText, TextInput } from './ui';
+import { ErrorText, TextArea, TextInput } from './ui';
 import { Select } from './Select';
 
 export type EntryDraftForm = {
@@ -292,7 +292,7 @@ export function EntryForm({
         <TextInput value={value.description} onChange={(e) => set('description', e.target.value)} />
       </Field>
       <Field label="Notes" wide>
-        <TextInput value={value.notes} onChange={(e) => set('notes', e.target.value)} />
+        <TextArea value={value.notes} onChange={(e) => set('notes', e.target.value)} />
       </Field>
       <div className="col-span-2">
         <ErrorText>{error}</ErrorText>

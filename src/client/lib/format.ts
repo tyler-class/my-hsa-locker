@@ -24,13 +24,14 @@ export function plural(n: number, one: string, many = `${one}s`) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** "3 minutes ago", "Mar 5". */
-export function ago(iso: string | null | undefined): string {
+/** "just now", "5m ago", "3h ago", "2d ago", then the date ("Mar 5"). */
+export function ago(iso: string | null | undefined, now = Date.now()): string {
   if (!iso) return '';
-  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  const s = (now - new Date(iso).getTime()) / 1000;
   if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)}d ago`;
   return shortDate(iso.slice(0, 10));
 }
 

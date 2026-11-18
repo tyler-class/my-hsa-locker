@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { registrableDomain, suggestInboxSubdomain } from '@shared/logic';
+import { Collapsible } from '../components/Collapsible';
 import { Icon } from '../components/Icon';
 import { useToast } from '../components/Toast';
 import {
@@ -558,7 +559,10 @@ function SetupSteps({ host }: { host: string | null }) {
               </GhostButton>
             </div>
             <Limits />
-            <h3 className="pt-5 pb-1 text-sm font-semibold text-ink">Recent mail</h3>
+            <h3 className="flex items-center gap-2 pt-5 pb-1 text-sm font-semibold text-ink">
+              <Icon name="inbox" size={15} className="text-accent" />
+              Recent mail
+            </h3>
             <ul className="-mx-6 flex flex-col px-6">
               {(i?.log ?? []).slice(0, 20).map((l) => (
                 <li
@@ -618,8 +622,11 @@ function Limits() {
     </label>
   );
   return (
-    <details className="pt-2">
-      <summary className="cursor-pointer text-sm font-medium text-ink">Limits</summary>
+    <Collapsible
+      id="inbox-limits"
+      className="pt-2"
+      summary={<span className="text-sm font-medium text-ink">Limits</span>}
+    >
       <div className="flex flex-col pt-2">
         <div className="flex items-center gap-3 border-b border-line py-2.5">
           <span className="min-w-0 flex-1 text-soft">
@@ -660,7 +667,7 @@ function Limits() {
         </label>
         <ErrorText>{error}</ErrorText>
       </div>
-    </details>
+    </Collapsible>
   );
 }
 
@@ -700,8 +707,10 @@ function ForwardingHelp({ address }: { address: string }) {
           medical receipts and forward them to the address.
         </li>
       </ul>
-      <details>
-        <summary className="cursor-pointer text-ink">Optional: forward some automatically</summary>
+      <Collapsible
+        id="inbox-auto-forward"
+        summary={<span className="text-ink">Optional: forward some automatically</span>}
+      >
         <div className="flex flex-col gap-3 pt-3">
           <p className="text-soft">
             Only for senders that send nothing but receipts. Never forward all mail from your
@@ -724,7 +733,7 @@ function ForwardingHelp({ address }: { address: string }) {
             ))}
           </ol>
         </div>
-      </details>
+      </Collapsible>
     </div>
   );
 }

@@ -2,17 +2,16 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
 import type { LedgerEntry, Reimbursement as R } from '@shared/types';
 import { namesFor } from '../components/bits';
-import { useToast } from '../components/Toast';
 import { DangerButton, Empty, ErrorText, PageHeader } from '../components/ui';
 import { api } from '../lib/api';
 import { formatDate, money, plural, shortDate } from '../lib/format';
 import { keys, useAppState } from '../lib/queries';
-import { useSave } from '../lib/useSave';
+import { useSave, useUndo } from '../lib/useSave';
 
 export function Reimbursement() {
   const { id = '' } = useParams();
   const nav = useNavigate();
-  const toast = useToast();
+  const undo = useUndo();
   const { data: state } = useAppState();
   const q = useQuery({
     queryKey: keys.reimbursement(id),
@@ -20,7 +19,12 @@ export function Reimbursement() {
   });
   const { run, busy, error } = useSave();
   const names = namesFor(state);
-  if (q.isError) return <Empty title="Not found">That reimbursement no longer exists.</Empty>;
+  if (q.isError)
+    return (
+      <Empty title="Not found" icon="dollar">
+        That reimbursement no longer exists.
+      </Empty>
+    );
   if (!q.data) return null;
   const { reimbursement: r, entries } = q.data;
   return (
@@ -48,10 +52,15 @@ export function Reimbursement() {
           icon="undo"
           disabled={busy}
           onClick={async () => {
-            if (!confirm('Undo this reimbursement? Its receipts become reimbursable again.'))
-              return;
             if (await run(() => api.del(`/reimbursements/${r.id}`))) {
-              toast({ text: 'Reimbursement undone' });
+              // Taking it back records it again, as it was.
+              undo('Reimbursement undone', () =>
+                api.post('/reimbursements', {
+                  date: r.date,
+                  note: r.note,
+                  entry_ids: entries.map((e) => e.id),
+                }),
+              );
               nav('/ledger');
             }
           }}

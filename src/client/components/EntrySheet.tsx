@@ -1,17 +1,16 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import type { LedgerEntry } from '@shared/types';
+import type { LedgerEntry, Reimbursement } from '@shared/types';
 import { api } from '../lib/api';
 import { formatDate, money } from '../lib/format';
-import { useAppState, useDocument } from '../lib/queries';
+import { useAppState, useDocument, useReimbursements } from '../lib/queries';
 import { fileUrl, useSaveFile } from '../lib/files';
-import { useSave } from '../lib/useSave';
+import { useSave, useUndo } from '../lib/useSave';
 import { useViewer } from '../lib/viewer';
 import { ReasonChips, StatusChip } from './bits';
 import { DocPreview } from './DocPreview';
 import { bodyFromForm, EntryForm, formFromEntry } from './EntryForm';
 import { Icon } from './Icon';
-import { useToast } from './Toast';
 import { ActionList, cx, Menu, PrimaryButton, Sheet, SlideToggle } from './ui';
 
 /**
@@ -24,8 +23,9 @@ export function EntrySheet({ entry, onClose }: { entry: LedgerEntry | null; onCl
 
 function EntrySheetBody({ entry, onClose }: { entry: LedgerEntry; onClose: () => void }) {
   const nav = useNavigate();
-  const toast = useToast();
+  const undo = useUndo();
   const { data: state } = useAppState();
+  const reimbursements = useReimbursements();
   const doc = useDocument(entry.document_id);
   const [form, setForm] = useState(() => formFromEntry(entry));
   const [formError, setFormError] = useState('');
@@ -54,17 +54,25 @@ function EntrySheetBody({ entry, onClose }: { entry: LedgerEntry; onClose: () =>
 
   async function toggleReimbursed() {
     if (reimbursed) {
+      // Undo records it again on the same date, with the same note.
+      const was = reimbursements.data?.find((r) => r.id === entry.reimbursement_id);
       if (await run(() => api.post('/entries/unreimburse', { ids: [entry.id] })))
-        toast({ text: 'Marked not reimbursed' });
-    } else if (
-      await run(() =>
-        api.post('/reimbursements', {
+        undo('Marked not reimbursed', () =>
+          api.post('/reimbursements', {
+            date: was?.date ?? new Date().toISOString().slice(0, 10),
+            note: was?.note ?? null,
+            entry_ids: [entry.id],
+          }),
+        );
+    } else {
+      const r = await run(() =>
+        api.post<Reimbursement>('/reimbursements', {
           date: new Date().toISOString().slice(0, 10),
           entry_ids: [entry.id],
         }),
-      )
-    )
-      toast({ text: 'Marked reimbursed' });
+      );
+      if (r) undo('Marked reimbursed', () => api.del(`/reimbursements/${r.id}`));
+    }
     onClose();
   }
 
@@ -269,8 +277,10 @@ function EntrySheetBody({ entry, onClose }: { entry: LedgerEntry; onClose: () =>
               hidden: reimbursed,
               onClick: async () => {
                 setMenu(null);
-                if (!confirm('Delete this entry? The document stays.')) return;
-                if (await run(() => api.del(`/entries/${entry.id}`))) onClose();
+                if (await run(() => api.del(`/entries/${entry.id}`))) {
+                  undo('Entry deleted', () => api.post('/entries/restore', entry));
+                  onClose();
+                }
               },
             },
           ]}

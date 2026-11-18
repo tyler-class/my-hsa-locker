@@ -9,7 +9,8 @@ import {
   DragOverlay,
   KeyboardSensor,
   MeasuringStrategy,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   pointerWithin,
   closestCenter,
   useSensor,
@@ -25,12 +26,14 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import type { InsightsPanel } from '@shared/types';
-import { Icon } from './Icon';
+import { Collapsible } from './Collapsible';
+import { Icon, type IconName } from './Icon';
 import { cx } from './ui';
 
 export interface PanelDef {
   id: string;
   title: string;
+  icon: IconName;
   sub?: ReactNode;
   /** Controls for this panel alone (a toggle), shown under its title. */
   actions?: ReactNode;
@@ -68,26 +71,33 @@ export function PanelBoard({
 }: {
   defs: PanelDef[];
   saved: InsightsPanel[];
-  onSave: (layout: InsightsPanel[]) => void;
+  /** Saves the layout; a rejected promise puts the previous layout back on screen. */
+  onSave: (layout: InsightsPanel[]) => Promise<unknown>;
 }) {
   // Local copy after the first change, so the screen never waits on the network.
   const [local, setLocal] = useState<InsightsPanel[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const lastMove = useRef(0);
+  // The layout as it was when a drag started, to put back if saving fails.
+  const before = useRef<InsightsPanel[] | null>(null);
   const layout = resolveLayout(defs, local ?? saved);
   const byId = new Map(defs.map((d) => [d.id, d]));
   const shown = layout.filter((p) => !p.hidden);
   const hidden = layout.filter((p) => p.hidden);
 
-  const commit = (next: InsightsPanel[]) => {
+  const save = (next: InsightsPanel[], prev: InsightsPanel[]) => {
     setLocal(next);
-    onSave(next);
+    onSave(next).catch(() => setLocal(prev));
   };
+  const commit = (next: InsightsPanel[]) => save(next, layout);
   const patch = (id: string, p: Partial<InsightsPanel>) =>
     commit(layout.map((x) => (x.id === id ? { ...x, ...p } : x)));
 
+  // A mouse drags straight away; a finger holds the grip briefly first, so a swipe that starts on
+  // it still scrolls the page.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
@@ -113,15 +123,24 @@ export function PanelBoard({
         collisionDetection={collide}
         measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
         onDragStart={({ active: a }) => {
+          before.current = layout;
           setLocal(layout);
           setActiveId(String(a.id));
         }}
         onDragOver={onOver}
         onDragEnd={() => {
           setActiveId(null);
-          if (local) onSave(resolveLayout(defs, local));
+          const prev = before.current;
+          before.current = null;
+          if (!local || !prev) return;
+          const next = resolveLayout(defs, local);
+          if (next.map((p) => p.id).join() !== prev.map((p) => p.id).join()) save(next, prev);
         }}
-        onDragCancel={() => setActiveId(null)}
+        onDragCancel={() => {
+          setActiveId(null);
+          if (before.current) setLocal(before.current);
+          before.current = null;
+        }}
       >
         <SortableContext items={shown.map((p) => p.id)} strategy={rectSortingStrategy}>
           <div className="pn-wrap">
@@ -152,14 +171,22 @@ export function PanelBoard({
       </DndContext>
 
       {hidden.length > 0 && (
-        <details className="pn-hidden">
-          <summary>
-            <Icon name="eyeOff" size={16} /> Hidden panels ({hidden.length})
-          </summary>
+        <Collapsible
+          id="insights-hidden"
+          className="pn-hidden"
+          summary={
+            <span className="inline-flex items-center gap-2 text-sm text-soft">
+              <Icon name="eyeOff" size={16} /> Hidden panels ({hidden.length})
+            </span>
+          }
+        >
           <div className="card flat">
             {hidden.map((p) => (
               <div className="pn-hid-row" key={p.id}>
-                <span>{byId.get(p.id)!.title}</span>
+                <span className="inline-flex items-center gap-2">
+                  <Icon name={byId.get(p.id)!.icon} size={16} className="text-accent" />
+                  {byId.get(p.id)!.title}
+                </span>
                 <button
                   type="button"
                   className="pn-tool"
@@ -176,7 +203,7 @@ export function PanelBoard({
               </div>
             ))}
           </div>
-        </details>
+        </Collapsible>
       )}
     </div>
   );
@@ -206,7 +233,7 @@ function SortablePanel({
         <button
           type="button"
           className="pn-grip"
-          // Dragging a panel starts right away: not a swipe between tabs.
+          // A drag on the grip is never a swipe between tabs.
           data-no-tab-swipe
           aria-label={`Move ${def.title}`}
           ref={setActivatorNodeRef}
@@ -279,7 +306,10 @@ function Panel({
           </span>
         )}
         <div className="pn-t">
-          <h3>{def.title}</h3>
+          <h3>
+            <Icon name={def.icon} size={16} className="text-accent" />
+            {def.title}
+          </h3>
           {def.sub ? <div className="sub">{def.sub}</div> : null}
         </div>
         {tools && <div className="pn-tools">{tools}</div>}

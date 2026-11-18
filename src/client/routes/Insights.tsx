@@ -27,6 +27,7 @@ import {
   type LinePoint,
 } from '../components/charts';
 import { PanelBoard, type PanelDef } from '../components/Panels';
+import { useToast } from '../components/Toast';
 import { Empty, PageHeader, SlideToggle } from '../components/ui';
 import { api } from '../lib/api';
 import { formatDate, money, plural } from '../lib/format';
@@ -73,6 +74,7 @@ const STATUS_LEGEND: [string, string][] = [
 
 export function Insights() {
   const qc = useQueryClient();
+  const toast = useToast();
   const { data: state } = useAppState();
   const ledger = useLedger();
   const reimb = useReimbursements();
@@ -95,19 +97,27 @@ export function Insights() {
     return (
       <div className="pb-12">
         {header}
-        <Empty title="Nothing to chart yet">
+        <Empty title="Nothing to chart yet" icon="chart">
           Insights fill in once you have a few receipts: how much you can reimburse, how it built
           up, and where it goes.
         </Empty>
       </div>
     );
 
+  // Shows the new layout straight away; if saving fails, the old one comes back (the board puts
+  // its own copy back when this rejects).
   const saveLayout = (insights_layout: InsightsPanel[]) => {
-    qc.setQueryData<AppState>(keys.state, (old) =>
-      old ? { ...old, settings: { ...old.settings, insights_layout } } : old,
-    );
-    void api.patch('/settings', { insights_layout }).catch(() => {
+    const prev = qc.getQueryData<AppState>(keys.state)?.settings.insights_layout;
+    const put = (layout: InsightsPanel[]) =>
+      qc.setQueryData<AppState>(keys.state, (old) =>
+        old ? { ...old, settings: { ...old.settings, insights_layout: layout } } : old,
+      );
+    put(insights_layout);
+    return api.patch('/settings', { insights_layout }).catch((e: unknown) => {
+      if (prev) put(prev);
+      toast({ text: 'Couldn’t save the layout.' });
       void qc.invalidateQueries({ queryKey: keys.state });
+      throw e;
     });
   };
 
@@ -173,7 +183,7 @@ export function Insights() {
     };
   };
   const emptyFor = (w: Window) =>
-    `No receipts ${w === 'this' ? `in ${year}` : w === 'last' ? `in ${year - 1}` : 'yet'}.`;
+    `No receipts ${w === 'this' ? `in ${year}` : w === 'last' ? `in ${year - 1}` : 'yet'}`;
   const cats = ranked('category', catWin, 8);
   const ppl = ranked('person', personWin, 8);
   const provs = ranked('provider', provWin, 8);
@@ -184,6 +194,7 @@ export function Insights() {
     {
       id: 'glance',
       title: 'At a glance',
+      icon: 'grid',
       size: 'full',
       body: (
         <div className="stats">
@@ -237,6 +248,7 @@ export function Insights() {
     {
       id: 'balance',
       title: 'Reimbursable over time',
+      icon: 'chart',
       sub: 'Claimable receipts vs. what you’ve withdrawn; the gap is what you can still take out',
       size: 'full',
       actions: <SlideToggle label="Range" value={range} options={RANGES} onChange={setRange} />,
@@ -252,12 +264,13 @@ export function Insights() {
           />
         </>
       ) : (
-        <p className="empty">No claimable receipts yet.</p>
+        <Empty compact icon="chart" title="No claimable receipts yet" />
       ),
     },
     {
       id: 'periods',
       title: 'Spending by period',
+      icon: 'cal',
       sub:
         (unit === 'month'
           ? 'Last 12 months'
@@ -288,6 +301,7 @@ export function Insights() {
     {
       id: 'aging',
       title: 'Age of reimbursable receipts',
+      icon: 'clock',
       sub: 'How long ago the care was. There’s no deadline to reimburse yourself.',
       size: 'half',
       body: g.reimbursable_cents ? (
@@ -312,12 +326,13 @@ export function Insights() {
           </ul>
         </>
       ) : (
-        <p className="empty">Nothing reimbursable right now.</p>
+        <Empty compact icon="check" title="Nothing reimbursable right now" />
       ),
     },
     {
       id: 'withdrawals',
       title: 'Reimbursements',
+      icon: 'dollar',
       sub: 'Money you’ve taken out of your HSA',
       size: 'half',
       body: withdrawals.length ? (
@@ -334,12 +349,15 @@ export function Insights() {
           }))}
         />
       ) : (
-        <p className="empty">No reimbursements yet. Select receipts in the Ledger to record one.</p>
+        <Empty compact icon="dollar" title="No reimbursements yet">
+          Select receipts in the Ledger to record one.
+        </Empty>
       ),
     },
     {
       id: 'categories',
       title: 'By category',
+      icon: 'layers',
       sub: 'Spending on every receipt',
       size: 'half',
       actions: (
@@ -353,12 +371,13 @@ export function Insights() {
       body: cats.rows.length ? (
         <Rank rows={cats.rows} max={cats.max} />
       ) : (
-        <p className="empty">{emptyFor(catWin)}</p>
+        <Empty compact icon="layers" title={emptyFor(catWin)} />
       ),
     },
     {
       id: 'people',
       title: 'By person',
+      icon: 'users',
       sub: 'Spending on every receipt',
       size: 'half',
       actions: (
@@ -372,12 +391,13 @@ export function Insights() {
       body: ppl.rows.length ? (
         <Rank rows={ppl.rows} max={ppl.max} />
       ) : (
-        <p className="empty">{emptyFor(personWin)}</p>
+        <Empty compact icon="users" title={emptyFor(personWin)} />
       ),
     },
     {
       id: 'providers',
       title: 'Top providers',
+      icon: 'tag',
       sub: 'Spending on every receipt',
       size: 'half',
       actions: (
@@ -391,7 +411,7 @@ export function Insights() {
       body: provs.rows.length ? (
         <Rank rows={provs.rows} max={provs.max} />
       ) : (
-        <p className="empty">{emptyFor(provWin)}</p>
+        <Empty compact icon="tag" title={emptyFor(provWin)} />
       ),
     },
   ];

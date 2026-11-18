@@ -1,5 +1,6 @@
 import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
+import pkg from '../../package.json';
 import { EXAMPLE_PROMPTS, MCP_PROMPTS } from '../../src/shared/examples';
 import { ORIGIN, PASSWORD, session } from './helpers';
 
@@ -109,6 +110,7 @@ async function rpc(token: string, method: string, params: unknown = {}) {
       messages?: { content: { text: string } }[];
       isError?: boolean;
       instructions?: string;
+      serverInfo?: { name: string; version: string };
     };
     error?: unknown;
   };
@@ -141,6 +143,7 @@ describe('mcp', () => {
       capabilities: {},
       clientInfo: { name: 'test', version: '1' },
     });
+    expect(init.result?.serverInfo?.version).toBe(pkg.version);
     expect(init.result?.instructions).toContain('call get_started');
     expect(init.result?.instructions).toContain(EXAMPLE_PROMPTS[0]!.prompt);
 

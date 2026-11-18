@@ -11,12 +11,19 @@ import {
   resolvedReasons,
   summarize,
 } from '@shared/logic';
-import { bulkEntries, entryPatch, reimbursementInput, reimbursementPatch } from '@shared/schemas';
+import {
+  bulkEntries,
+  entryPatch,
+  entryRestore,
+  reimbursementInput,
+  reimbursementPatch,
+} from '@shared/schemas';
 import type { Entry, LedgerEntry, Reimbursement } from '@shared/types';
 import {
   all,
   chunks,
   first,
+  insertStmt,
   loadCategories,
   loadPeople,
   loadProviders,
@@ -176,6 +183,33 @@ entries.delete('/entries/:id', async (c) => {
   ]);
   await refreshDocStatus(db, e.document_id);
   return c.json({ ok: true });
+});
+
+/** Undo for a delete: puts the entry back with its id and review state. Not reimbursed. */
+entries.post('/entries/restore', async (c) => {
+  const db = c.env.DB;
+  const input = await body(c, entryRestore);
+  const doc = await first<{ status: string }>(
+    db,
+    'SELECT status FROM documents WHERE id = ?',
+    input.document_id,
+  );
+  if (!doc || doc.status === 'discarded') throw notFound('Document');
+  if (await first(db, 'SELECT id FROM entries WHERE id = ?', input.id))
+    throw new ApiError(409, 'exists', 'That entry is already back.');
+  const { review_reasons, excluded_auto, ...fields } = input;
+  const now = nowIso();
+  await insertStmt(db, 'entries', {
+    ...fields,
+    ...(input.type === 'eob' ? { amount_cents: null, card_last4: null } : {}),
+    review_reasons_json: JSON.stringify(review_reasons ?? []),
+    excluded_auto: excluded_auto ? 1 : 0,
+    sort_order: input.sort_order ?? 0,
+    created_at: input.created_at ?? now,
+    updated_at: now,
+  }).run();
+  await refreshDocStatus(db, input.document_id);
+  return c.json(await loadEntry(db, input.id), 201);
 });
 
 entries.post('/entries/bulk', async (c) => {

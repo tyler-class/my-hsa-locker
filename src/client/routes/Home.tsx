@@ -164,6 +164,7 @@ export function Home() {
       ) : (
         <Empty
           title="Nothing logged yet"
+          icon="receipt"
           action={
             <PrimaryButton icon="upload" onClick={() => setUpload(true)}>
               Upload your first receipt

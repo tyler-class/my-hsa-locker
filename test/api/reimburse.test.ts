@@ -62,6 +62,23 @@ describe('summary and reimbursements (sample household)', () => {
     expect(before.pending_review_cents - after.pending_review_cents).toBe(e.amount_cents);
   });
 
+  it('puts a deleted entry back as it was', async () => {
+    const api = await session();
+    const { entries } = (await api.get<{ entries: LedgerEntry[] }>('/entries')).data;
+    const e = entries.find((x) => !x.reimbursement_id && x.review_reasons.length)!;
+    const before = (await api.get<{ totals: Totals }>('/summary')).data.totals;
+    expect((await api.del(`/entries/${e.id}`)).status).toBe(200);
+    expect((await api.get(`/entries/${e.id}`)).status).toBe(404);
+    const r = await api.post<LedgerEntry>('/entries/restore', e);
+    expect(r.status).toBe(201);
+    expect(r.data.id).toBe(e.id);
+    expect(r.data.review_reasons).toEqual(e.review_reasons);
+    expect(r.data.amount_cents).toBe(e.amount_cents);
+    expect((await api.get<{ totals: Totals }>('/summary')).data.totals).toEqual(before);
+    // Only once.
+    expect((await api.post('/entries/restore', e)).status).toBe(409);
+  });
+
   it('exports a CSV that respects filters', async () => {
     const api = await session();
     const all = await api.get<string>('/export/ledger.csv');

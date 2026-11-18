@@ -329,6 +329,13 @@
   }
 }
 
+/* Sheets and dialogs lift: the backdrop fades in and the panel rises into place, from the bottom
+   edge on phones and a short way up on wider screens. Reduced motion turns both off (above). */
+@keyframes sheet-fade {
+  from {
+    opacity: 0;
+  }
+}
 @keyframes sheet-in {
   from {
     transform: translateY(100%);
@@ -337,9 +344,25 @@
     transform: translateY(0);
   }
 }
-@media (max-width: 639px) {
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.sheet-fade {
+  animation: sheet-fade 0.22s ease-out;
+}
+.sheet-in {
+  animation: sheet-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (min-width: 640px) {
   .sheet-in {
-    animation: sheet-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: dialog-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 }
 
@@ -401,6 +424,9 @@
   padding-top: 5px;
 }
 .ins .pn-t h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   font-size: 15px;
   font-weight: 600;
@@ -432,7 +458,11 @@
 }
 .ins .pn-grip {
   cursor: grab;
-  touch-action: none;
+  /* A finger holds the grip before a drag starts, so a swipe from it still scrolls. */
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 .ins .pn-grip:active {
   cursor: grabbing;
@@ -475,15 +505,6 @@
 .ins .pn-hidden {
   margin-top: 20px;
 }
-.ins .pn-hidden summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  color: var(--soft);
-  padding: 6px 2px;
-}
 .ins .pn-hidden .card {
   margin-top: 8px;
   padding: 4px 8px 4px 16px;
@@ -500,13 +521,6 @@
 }
 .ins .pn-hid-row .pn-tool {
   opacity: 0.85;
-}
-.ins .empty {
-  margin: 0;
-  padding: 24px 8px;
-  text-align: center;
-  font-size: 14px;
-  color: var(--soft);
 }
 
 /* tiles: label on top, big number, quiet sub-line */

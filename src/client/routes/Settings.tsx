@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { exportFilename, extForMime, uniqueNames } from '@shared/logic';
 import { AboutButton } from '../components/AboutSheet';
+import { Collapsible } from '../components/Collapsible';
 import { Icon } from '../components/Icon';
 import { InstallHint } from '../components/InstallHint';
 import { isStandalone } from '../lib/pwa';
@@ -564,10 +565,11 @@ function OwnKeyHelp() {
       .then(() => toast({ text: 'Copied.' }))
       .catch(() => {});
   return (
-    <details className="text-soft">
-      <summary className="cursor-pointer text-ink">
-        Use your own Anthropic, OpenAI or Gemini key
-      </summary>
+    <Collapsible
+      id="settings-own-key"
+      className="text-soft"
+      summary={<span className="text-ink">Use your own Anthropic, OpenAI or Gemini key</span>}
+    >
       <div className="flex flex-col gap-3 pt-3">
         <p>
           Add these as secrets in the{' '}
@@ -607,7 +609,7 @@ function OwnKeyHelp() {
           Keys are never stored in the app. Remove the secrets to go back to Workers AI.
         </p>
       </div>
-    </details>
+    </Collapsible>
   );
 }
 

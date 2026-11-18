@@ -48,7 +48,10 @@ export function Onboarding() {
 
       {step === 0 && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold">Whose receipts are these?</h2>
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <Icon name="users" size={15} className="text-accent" />
+            Whose receipts are these?
+          </h2>
           {people.map((p) => (
             <div
               key={p.id}
@@ -130,7 +133,10 @@ export function Onboarding() {
 
       {step === 1 && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold">Your HSA debit cards (optional)</h2>
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <Icon name="card" size={15} className="text-accent" />
+            Your HSA debit cards (optional)
+          </h2>
           <p className="text-sm text-soft">
             Receipts paid with these cards were already paid from your HSA, so they aren’t counted
             as reimbursable. You can undo this per receipt.
@@ -167,7 +173,10 @@ export function Onboarding() {
 
       {step === 2 && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold">Forward receipts by email (optional)</h2>
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <Icon name="mail" size={15} className="text-accent" />
+            Forward receipts by email (optional)
+          </h2>
           <p className="text-sm text-soft">
             With a domain on Cloudflare you can give HSA Locker its own address and forward receipts
             to it. No domain? Upload works for everything.
@@ -189,7 +198,10 @@ export function Onboarding() {
 
       {step === 3 && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold">Add your first receipt</h2>
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <Icon name="receipt" size={15} className="text-accent" />
+            Add your first receipt
+          </h2>
           <p className="text-sm text-soft">A PDF or a photo. HSA Locker reads it and logs it.</p>
           <PrimaryButton icon="upload" onClick={() => setUpload(true)}>
             Upload a receipt
