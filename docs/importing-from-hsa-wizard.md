@@ -29,7 +29,7 @@ npm run import:hsa-wizard -- \
 
 It also writes **`hsa-wizard-mapping.local.json`**: every patient and provider name as printed, and what it will become. Name variants are collapsed (`Sam` and `Example, Sam` → `Sam Example`) and truncated EOB provider names joined to the full one (`Riverside Physical Ther` → `Riverside Physical Therapy`). Open it and fix anything wrong. Each printed name becomes an alias of the person or provider, so future documents match too.
 
-The mapping file is git-ignored. It contains your family’s names; don’t commit it.
+The mapping file is git-ignored. It contains people’s names; don’t commit it.
 
 ## 4. Import
 
@@ -43,7 +43,7 @@ npm run import:hsa-wizard -- \
   --url https://hsa-locker.you.workers.dev
 ```
 
-It asks for your household password (or set `HSA_LOCKER_PASSWORD`). Then it creates people, providers and missing categories, uploads each file once, and adds its rows.
+It asks for your password (or set `HSA_LOCKER_PASSWORD`). Then it creates people, providers and missing categories, uploads each file once, and adds its rows.
 
 - **One document per Drive file.** An EOB that produced dozens of sheet rows becomes one document with dozens of lines.
 - **Identical rows collapse.** Rows in the same file with the same date, provider, description and amount become one entry; the dry run lists them.

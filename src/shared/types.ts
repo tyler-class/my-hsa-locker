@@ -155,7 +155,7 @@ export interface Settings {
   /** Where the daily review reminder goes (verified in Email Routing → Destination Addresses). */
   notify_email: string | null;
   notify_daily: boolean;
-  /** Push: the Reimbursable milestone, in cents (one amount for the household). */
+  /** Push: the Reimbursable milestone, in cents (one amount for the whole app). */
   notify_milestone_cents: number;
   /** Insights panel order, width and visibility. Unknown or missing panels use defaults. */
   insights_layout: InsightsPanel[];

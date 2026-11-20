@@ -31,7 +31,7 @@ export function Login() {
         <div className="flex flex-col items-start gap-3">
           <img src="/favicon.svg" alt="" className="h-12 w-12 rounded-2xl" />
           <h1 className="text-[28px] font-semibold tracking-[-0.025em]">HSA Locker</h1>
-          <p className="text-sm text-soft">Enter your household password.</p>
+          <p className="text-sm text-soft">Enter your password.</p>
         </div>
         <div className="flex flex-col gap-2">
           <label htmlFor="password" className="text-xs text-soft">

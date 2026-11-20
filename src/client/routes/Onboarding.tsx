@@ -93,7 +93,7 @@ export function Onboarding() {
           </form>
           <label className="flex flex-col gap-1.5 pt-2">
             <span className="text-xs text-soft">
-              Family last names (helps match “Lastname, Firstname” on statements)
+              Last names (helps match “Lastname, Firstname” on statements)
             </span>
             <TextInput
               placeholder="e.g. Example"
@@ -118,7 +118,7 @@ export function Onboarding() {
           <div className="flex flex-col gap-1 rounded-xl bg-chip p-4">
             <p className="text-sm font-medium">Just looking around?</p>
             <p className="text-sm text-soft">
-              Load a made-up family with two years of receipts. Delete it any time.
+              Load made-up sample data with two years of receipts. Delete it any time.
             </p>
             <GhostButton
               className="-ml-3 self-start text-accent"

@@ -1,4 +1,4 @@
-// MCP server: lets any MCP-capable assistant read this household's HSA ledger and record
+// MCP server: lets any MCP-capable assistant read this HSA ledger and record
 // reimbursements. Tools call the same REST API the app uses, marked internal because
 // OAuthProvider has already checked the assistant's token. No file access in v1.
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
@@ -98,7 +98,7 @@ function entryView(e: LedgerEntry, s: AppState) {
 const statusEnum = z.enum(['all', 'outstanding', 'reimbursed', 'excluded', 'needs_review']);
 const excludedEnum = z.enum(EXCLUDED_REASONS.map(([k]) => k) as [string, ...string[]]);
 
-export const INSTRUCTIONS = `HSA Locker keeps a household's medical receipts and EOBs (Explanations of Benefits) and tracks what they can still reimburse themselves from their HSA.
+export const INSTRUCTIONS = `HSA Locker keeps medical receipts and EOBs (Explanations of Benefits) and tracks what they can still reimburse themselves from their HSA.
 
 How to work with it:
 - Receipts carry the amount the patient paid; only receipts count toward reimbursable totals. EOB lines are reference only and never count.
@@ -143,7 +143,7 @@ function buildServer(call: Call) {
   server.registerTool(
     'get_summary',
     {
-      description: `Totals for the household's HSA: documented, reimbursed, reimbursable and pending review, overall and per year. ${MONEY_NOTE} Reimbursable never includes amounts still waiting for review.`,
+      description: `Totals for the HSA: documented, reimbursed, reimbursable and pending review, overall and per year. ${MONEY_NOTE} Reimbursable never includes amounts still waiting for review.`,
       inputSchema: z.object({ year: z.number().int().optional().describe('Only this year') }),
     },
     async ({ year }) => {

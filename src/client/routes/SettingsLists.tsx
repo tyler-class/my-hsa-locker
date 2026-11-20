@@ -88,7 +88,7 @@ export function PeopleEditor({ state }: { state: AppState }) {
       </GhostButton>
       <label className="flex flex-col gap-1.5 pt-3">
         <span className="text-xs text-soft">
-          Family last names, comma-separated. “Example, Sam” and “Sam Example” then match Sam.
+          Last names, comma-separated. “Example, Sam” and “Sam Example” then match Sam.
         </span>
         <div className="flex gap-2">
           <TextInput

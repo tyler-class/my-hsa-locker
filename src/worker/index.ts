@@ -1,6 +1,6 @@
 // Worker entry. OAuthProvider sits in front so AI assistants can connect over MCP:
 //   /mcp            → MCP server (needs an OAuth token)
-//   /authorize      → consent page (approve with the household password)
+//   /authorize      → consent page (approve with the app's password)
 //   /oauth/*, /.well-known/* → handled by the provider
 //   /api/*          → the app's REST API (cookie session)
 // Plus email() for the inbox and scheduled() for the work queue.

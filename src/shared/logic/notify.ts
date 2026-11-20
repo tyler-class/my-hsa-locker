@@ -201,7 +201,7 @@ export const notifyMoney = (cents: number) => formatCents(cents).replace(/\.00$/
 const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : many);
 
 // ---------------------------------------------------------------------------------------------
-// Reimbursable milestone: Home's Reimbursable total reaching an amount the household sets.
+// Reimbursable milestone: Home's Reimbursable total reaching an amount the owner sets.
 // Once per crossing from below to at or above it; dropping below (a reimbursement) re-arms it.
 
 /** The amount, until someone changes it in Settings → Notifications. */

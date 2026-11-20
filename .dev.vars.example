@@ -1,4 +1,4 @@
-# The one password your household uses to sign in to HSA Locker.
+# The password you sign in to HSA Locker with.
 APP_PASSWORD=change-me-to-something-long
 
 # Optional: read documents with your own model provider instead of Workers AI.

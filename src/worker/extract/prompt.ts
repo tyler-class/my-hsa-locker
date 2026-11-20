@@ -1,6 +1,6 @@
 // The extraction prompt. Ported from HSA Wizard's buildGeminiPrompt_ (same document types, line
 // item rules and field names), with additions: per-line confidence and a verbatim source quote,
-// EOB reference amounts, the household's own category list, and prompt-injection defense.
+// EOB reference amounts, the owner's own category list, and prompt-injection defense.
 
 export function systemPrompt(categories: string[]): string {
   const cats = categories.length ? categories.join(', ') : 'Other';

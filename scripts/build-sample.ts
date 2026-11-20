@@ -1,4 +1,4 @@
-// Builds seed/sample.json: a clearly synthetic household (the Example family) with ~25 entries
+// Builds seed/sample.json: clearly synthetic data (people named Example) with ~25 entries
 // across two years, one EOB, a reimbursement and a few entries waiting for review.
 // No real people, providers or amounts. Run: npm run sample:build
 import { writeFileSync } from 'node:fs';

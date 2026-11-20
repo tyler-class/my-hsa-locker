@@ -33,7 +33,7 @@ It's also MCP-enabled, so you can ask an AI assistant what's reimbursable, fix o
 
 ![An AI assistant connected to HSA Locker: on a laptop it lists the four receipts waiting for review and approves two; on a phone it reports a new emailed receipt and how much is ready to withdraw](docs/screenshots/ai-chat.png)
 
-One deployment is one household. HSA Locker isn’t tax advice and makes no HIPAA compliance claims.
+Each copy you deploy is your own, with its own data. HSA Locker isn’t tax advice and makes no HIPAA compliance claims.
 
 ## A look around
 
@@ -65,7 +65,7 @@ One deployment is one household. HSA Locker isn’t tax advice and makes no HIPA
 
 **People and HSA cards.** Spellings of a name match one person. Receipts paid with an HSA card you list are marked not claimable.
 
-![Settings → People with four people and the family last name, and Reimbursing with an HSA card ending 4242](docs/screenshots/settings-people.png)
+![Settings → People with four people and a last name, and Reimbursing with an HSA card ending 4242](docs/screenshots/settings-people.png)
 
 ## Before you install
 
@@ -121,7 +121,7 @@ Sign in to Cloudflare if it asks. You land on a setup page.
 
 ### 6. Set your password
 
-Under **Variables and secrets**, fill in **APP_PASSWORD**: the one password everyone in your household uses to sign in. Pick something long. You can change it later (see [Change your password](#change-your-password)), but set it now.
+Under **Variables and secrets**, fill in **APP_PASSWORD**: the password you sign in with. Pick something long. You can change it later (see [Change your password](#change-your-password)), but set it now.
 
 <!-- 📸 SCREENSHOT docs/screenshots/install-6-password.png: The APP_PASSWORD field on the setup page -->
 
@@ -159,7 +159,7 @@ HSA Locker can send notifications to your phone. They only work in the app insta
 
 **Install it on Android:** open HSA Locker in Chrome, open the menu **⋮** and tap **Install app** (or **Add to Home screen**), then open it from the new icon.
 
-**Turn them on:** in the installed app, open **Settings → Notifications** and switch on **Notifications on this device**. Allow notifications when your phone asks. Each phone chooses its own, so everyone in the family can pick what they get. **Send a test** checks it's working.
+**Turn them on:** in the installed app, open **Settings → Notifications** and switch on **Notifications on this device**. Allow notifications when your phone asks. Each device has its own on/off switch and choices. **Send a test** checks it's working.
 
 ## Updates
 
@@ -247,7 +247,7 @@ In the installed app, **Settings → Notifications** picks what this phone is to
 
 ## Connect an AI assistant
 
-HSA Locker includes an [MCP](https://modelcontextprotocol.io) server at `https://<your-hsa-locker>/mcp`. Open **Settings → Connect an AI assistant** to copy your URL and see steps for Claude, ChatGPT, Claude Code and others. When an assistant connects, HSA Locker shows a sign-in page; enter your household password to approve it. Assistants can read your ledger and totals and record reimbursements; they can’t open the documents. Changing the password doesn’t disconnect them; use **Disconnect all** in the same place.
+HSA Locker includes an [MCP](https://modelcontextprotocol.io) server at `https://<your-hsa-locker>/mcp`. Open **Settings → Connect an AI assistant** to copy your URL and see steps for Claude, ChatGPT, Claude Code and others. When an assistant connects, HSA Locker shows a sign-in page; enter your password to approve it. Assistants can read your ledger and totals and record reimbursements; they can’t open the documents. Changing the password doesn’t disconnect them; use **Disconnect all** in the same place.
 
 ![Settings → Connect an AI assistant with the connector URL, Copy, the connected assistants and setup tabs for Claude, ChatGPT and other apps](docs/screenshots/settings-assistant.png)
 
@@ -296,7 +296,7 @@ How the button, Workers Builds and the update workflow fit together: [docs/deplo
 npm install
 cp .dev.vars.example .dev.vars    # then set APP_PASSWORD
 npm run db:migrate:local
-npm run db:seed:sample:local      # optional: a made-up household
+npm run db:seed:sample:local      # optional: made-up sample data
 npm run dev
 ```
 

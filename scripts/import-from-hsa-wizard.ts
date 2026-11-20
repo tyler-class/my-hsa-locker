@@ -4,7 +4,7 @@
 //   npm run import:hsa-wizard -- --csv log.csv --files ./drive-folder --url http://localhost:5173 --dry-run
 //   npm run import:hsa-wizard -- --csv log.csv --files ./drive-folder --url https://hsa-locker.you.workers.dev
 //
-// It talks to the app's API (sign in with the household password), so the same command works
+// It talks to the app's API (sign in with the app's password), so the same command works
 // against `npm run dev` and a deployed copy. Re-running it is safe: files are matched by their
 // SHA-256 and a document's entries are only added once.
 import { createHash } from 'node:crypto';
@@ -151,7 +151,7 @@ if (dryRun) {
 async function password(): Promise<string> {
   if (process.env.HSA_LOCKER_PASSWORD) return process.env.HSA_LOCKER_PASSWORD;
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const pw = await rl.question('Household password: ');
+  const pw = await rl.question('Password: ');
   rl.close();
   return pw;
 }
