@@ -22,7 +22,9 @@ import { useSave } from '../lib/useSave';
 const KINDS = NOTIFY_KINDS.map((k) => k.id);
 
 /** The kit's ⓘ lines, with HSA Locker's timing in place of "daily ones at 8 a.m.". */
-const KIT_INFO = pushInfo({ badge: BADGE_MEANS }).lines.filter((t) => !t.startsWith('Daily ones'));
+const KIT_INFO = pushInfo({ badge: BADGE_MEANS, title: 'HSA Locker' }).lines.filter(
+  (t) => !t.startsWith('Daily ones'),
+);
 const INFO = [
   KIT_INFO[0]!,
   'Needs review and Couldn’t read a document come once per document, soon after it’s read. Email inbox problems come once a day per problem. From 9 p.m. to 8 a.m. they wait until 8 a.m. and arrive together.',
