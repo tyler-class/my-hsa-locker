@@ -13,7 +13,7 @@ Conventions for working on HSA Locker, shared with the owner's other self-hosted
 - Verify with typecheck, lint, tests and `curl`; don't open a browser unless the owner asks.
 - Push to `main` only when the owner says so. Deploying (`npm run deploy`) is a separate step,
   also only when asked.
-- Files headed "Selfhost Kit: synced from tyler-class/selfhost-kit" (`src/*/kit/*`,
+- Files headed "Selfhost Kit: synced from tyler-class/tally" (`src/*/kit/*`,
   `scripts/release.ts`, `.github/workflows/update.yml`) are overwritten by the kit's sync: make
   those changes in the kit, not here.
 - Money is integer cents everywhere (`amount_cents`); show it with `money()` and read typed amounts
