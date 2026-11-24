@@ -42,6 +42,8 @@ Conventions for working on HSA Locker, shared with the owner's other self-hosted
   only where undo isn't possible: reading a document again (edits are replaced), removing a person
   (their receipts lose the link), and, for now, discarding a document (outstanding: discard
   deletes the file straight away, so it needs a delayed file delete before it can take an Undo).
+  That includes a document still being read: its Processing row (Ledger, Home) has a trash to
+  delete it, and a read that finishes after it's deleted is dropped.
 - A filter shows the same choices and counts everywhere the same data appears.
 
 ## Layout and look

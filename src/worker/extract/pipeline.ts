@@ -496,6 +496,15 @@ export async function processDocument(
   return result;
 }
 
+/** Deleted while it was being read: the read's result is dropped instead of bringing it back. */
+async function wasDiscarded(db: D1Database, id: string): Promise<boolean> {
+  const r = await db
+    .prepare('SELECT status FROM documents WHERE id = ?')
+    .bind(id)
+    .first<{ status: string }>();
+  return !r || r.status === 'discarded';
+}
+
 async function readAndStore(
   env: Cloudflare.Env,
   id: string,
@@ -525,6 +534,7 @@ async function readAndStore(
     const categories = (await loadCategories(db)).map((c) => c.name);
     const out = await readDocument(env, doc, provider, categories, ctx);
 
+    if (await wasDiscarded(db, id)) return 'skipped';
     if (out.kind === 'review') {
       await db.batch([
         db
@@ -551,6 +561,7 @@ async function readAndStore(
     const dReasons = docReasons(kind, rows.length, doc.mime);
     const anyEntryReview = rows.some((r) => r.review_reasons_json !== '[]');
     const status = dReasons.length || anyEntryReview ? 'needs_review' : 'processed';
+    if (await wasDiscarded(db, id)) return 'skipped';
     await db.batch([
       // Reprocessing replaces the document's entries (the API refuses while any are reimbursed).
       db.prepare('DELETE FROM entries WHERE document_id = ? AND reimbursement_id IS NULL').bind(id),
@@ -593,6 +604,7 @@ async function readAndStore(
     const retryable = !(e instanceof ProviderError) || e.retryable;
     const giveUp = !retryable || doc.attempts >= MAX_ATTEMPTS;
     console.warn(`document ${id}: attempt ${doc.attempts} failed (${code})`);
+    if (await wasDiscarded(db, id)) return 'skipped';
     if (giveUp) {
       await db
         .prepare(

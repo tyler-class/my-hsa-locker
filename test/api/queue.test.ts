@@ -279,6 +279,24 @@ describe('reading copies', () => {
 });
 
 describe('what the app shows while reading', () => {
+  it('a document still being read can be deleted, and is then never read', async () => {
+    const api = await session();
+    const up = await upload(
+      api,
+      fakeJpeg(receiptExtraction({ appointment_date: '2024-11-09', amount: '8.00' })),
+      'IMG_5003.jpg',
+      'image/jpeg',
+    );
+    const id = up.data.document.id;
+    expect((await row(id))!.status).toBe('pending');
+    expect((await api.post(`/documents/${id}/discard`)).status).toBe(200);
+    const list = await api.get<{ documents: { id: string }[] }>('/documents?status=in_flight');
+    expect(list.data.documents.map((d) => d.id)).not.toContain(id);
+    await sweep(env, 20);
+    expect((await row(id))!.status).toBe('discarded');
+    expect(await amounts(id)).toEqual([]);
+  });
+
   it('counts failed-and-retrying documents as in flight, and lists them with their retry time', async () => {
     const api = await session();
     const id = await store(`%PDF-1.7\n${'Provider outage again. '.repeat(20)} FAKE_FAIL`);
