@@ -9,12 +9,15 @@ import { describe, expect, it } from 'vitest';
 import type { AppState, DocumentSummary } from '../../src/shared/types';
 import worker, { isTenthMinute } from '../../src/worker/index';
 import {
+  badReplyReason,
+  describeFailure,
   MAX_ATTEMPTS,
   processDocument,
   readingCopyKey,
   STALE_MINUTES,
   sweep,
 } from '../../src/worker/extract/pipeline';
+import { errorKind, ProviderError, shortReason } from '../../src/worker/extract/providers';
 import { storeDocument } from '../../src/worker/store';
 import { fakeJpeg, fakePdf, ORIGIN, receiptExtraction, session, upload } from './helpers';
 
@@ -287,5 +290,67 @@ describe('what the app shows while reading', () => {
     expect(doc.next_attempt_at! > new Date().toISOString()).toBe(true);
     // The count and the Ledger's rows agree.
     expect(state.data.counts.in_flight).toBe(list.data.documents.length);
+  });
+
+  it('says which photos being read have a reading copy', async () => {
+    const api = await session();
+    const old = await store(fakeJpeg(receiptExtraction({ amount: '7.00' })), 'image/jpeg');
+    const withCopy = await store(fakeJpeg(receiptExtraction({ amount: '8.00' })), 'image/jpeg');
+    await env.FILES.put(readingCopyKey(withCopy), fakeJpeg(receiptExtraction({ amount: '8.00' })));
+    const pdf = await store(`%PDF-1.7\n${'Still reading. '.repeat(20)} FAKE_FAIL`);
+    const list = await api.get<{ documents: DocumentSummary[] }>('/documents?status=in_flight');
+    const of = (id: string) => list.data.documents.find((d) => d.id === id)!;
+    expect(of(old).has_reading_copy).toBe(false);
+    expect(of(withCopy).has_reading_copy).toBe(true);
+    expect(of(pdf).has_reading_copy).toBe(false);
+    // Only the in-flight list carries it.
+    const all = await api.get<{ documents: DocumentSummary[] }>('/documents');
+    expect(all.data.documents.find((d) => d.id === old)!.has_reading_copy).toBeUndefined();
+    // A copy sent while the original is mid-read doesn't start a second read of it.
+    await env.DB.prepare("UPDATE documents SET status = 'processing', updated_at = ? WHERE id = ?")
+      .bind(new Date().toISOString(), old)
+      .run();
+    const res = await SELF.fetch(`${ORIGIN}/api/documents/${old}/reading-copy`, {
+      method: 'POST',
+      headers: { Cookie: api.cookie, Origin: ORIGIN, 'Content-Type': 'image/jpeg' },
+      body: fakeJpeg(receiptExtraction({ amount: '7.00' })),
+    });
+    expect(res.status).toBe(200);
+    expect(await processDocument(env, old)).toBe('skipped');
+    expect((await row(old))!.status).toBe('processing');
+  });
+});
+
+describe('why a read failed', () => {
+  it('stores the reason a reply couldn’t be used, without its contents', async () => {
+    const id = await store(
+      `%PDF-1.7\n${'Secret words here. '.repeat(20)}\nFAKE_EXTRACTION: Secret reply`,
+    );
+    expect(await processDocument(env, id)).toBe('failed');
+    const r = (await row(id))!;
+    expect(r.error).toBe('bad_reply: no JSON in the reply');
+  });
+
+  it('describes provider failures in a few content-free words', () => {
+    expect(describeFailure(new ProviderError('http_529', true, 'overloaded_error'))).toBe(
+      'http_529: overloaded_error',
+    );
+    expect(describeFailure(new ProviderError('timeout', true))).toBe('timeout');
+    expect(errorKind({ error: { type: 'overloaded_error', message: 'the receipt says…' } })).toBe(
+      'overloaded_error',
+    );
+    expect(errorKind({ error: { code: 429, status: 'RESOURCE_EXHAUSTED' } })).toBe('429');
+    expect(errorKind({ nothing: true })).toBeUndefined();
+    const ai = new Error('3040: Capacity temporarily exceeded, please try again.');
+    ai.name = 'AiError';
+    expect(shortReason(ai)).toBe('AiError: 3040: Capacity temporarily exceeded, please try again.');
+    expect(shortReason(new Error('Bad input "Dr. Smith $45"\nmore'))).toBe('Bad input …');
+    expect(describeFailure(new Error(''))).toBe('Error');
+    expect(badReplyReason(new SyntaxError('Unexpected token D in "Dr. Smith"'))).toBe(
+      'not valid JSON',
+    );
+    expect(
+      badReplyReason({ issues: [{ path: ['line_items', 0, 'amount'], code: 'invalid_type' }] }),
+    ).toBe('didn’t fit the form (line_items.0.amount invalid_type)');
   });
 });

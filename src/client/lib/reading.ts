@@ -32,3 +32,12 @@ export function readingStatus(
     retrying: true,
   };
 }
+
+/** A photo being read with no reading copy yet (the server says which have one). */
+export function needsCopy(d: { mime: string; status: string; has_reading_copy?: boolean }) {
+  return (
+    d.mime.startsWith('image/') &&
+    d.has_reading_copy === false &&
+    ['pending', 'processing', 'failed'].includes(d.status)
+  );
+}

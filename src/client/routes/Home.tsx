@@ -4,10 +4,11 @@ import type { LedgerEntry } from '@shared/types';
 import { namesFor, StatusChip } from '../components/bits';
 import { EntrySheet } from '../components/EntrySheet';
 import { Icon } from '../components/Icon';
+import { ReadingRow } from '../components/ReadingRows';
 import { UploadSheet } from '../components/UploadSheet';
 import { Empty, PageHeader, PrimaryButton, SectionLabel } from '../components/ui';
 import { money, plural, shortDate } from '../lib/format';
-import { useAppState, useSummary } from '../lib/queries';
+import { useAppState, useInFlightDocs, useSummary } from '../lib/queries';
 import { Onboarding } from './Onboarding';
 
 function Stat({
@@ -42,6 +43,8 @@ export function Home() {
   const nav = useNavigate();
   const { data: state } = useAppState();
   const summary = useSummary();
+  // Documents still being read lead Recently logged until their entries replace them.
+  const reading = useInFlightDocs().data ?? [];
   const [upload, setUpload] = useState(false);
   const [open, setOpen] = useState<LedgerEntry | null>(null);
   if (!state) return null;
@@ -175,11 +178,16 @@ export function Home() {
         </Empty>
       )}
 
-      {s && s.recent.length > 0 && (
+      {((s && s.recent.length > 0) || reading.length > 0) && (
         <>
           <SectionLabel icon="clock">Recently logged</SectionLabel>
           <ul className="px-5 pt-1">
-            {s.recent.map((e) => (
+            {reading.map((d) => (
+              <li key={d.id} className="border-b border-line">
+                <ReadingRow doc={d} className="my-1 py-2.5" />
+              </li>
+            ))}
+            {(s?.recent ?? []).map((e) => (
               <li key={e.id} className="border-b border-line">
                 <button
                   onClick={() => setOpen(e)}

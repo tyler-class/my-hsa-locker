@@ -5,19 +5,27 @@ import {
   filterFromParams,
   filterLedger,
   filterToParams,
+  ledgerCounts,
   type LedgerFilter,
-  type StatusFilter,
 } from '@shared/logic';
 import { EXCLUDED_REASONS } from '@shared/lookups';
 import type { LedgerEntry } from '@shared/types';
 import { excludedText, namesFor, ReasonChips, StatusChip } from '../components/bits';
 import { EntrySheet } from '../components/EntrySheet';
 import { LedgerFilters } from '../components/LedgerFilters';
-import { ReadingRows } from '../components/ReadingRows';
+import { ProcessingSection } from '../components/ReadingRows';
 import { Icon } from '../components/Icon';
 import { ReimburseSheet } from '../components/ReimburseSheet';
 import { UploadSheet } from '../components/UploadSheet';
-import { ActionList, cx, Empty, PageHeader, PrimaryButton, Sheet } from '../components/ui';
+import {
+  ActionList,
+  cx,
+  Empty,
+  PageHeader,
+  PrimaryButton,
+  SectionLabel,
+  Sheet,
+} from '../components/ui';
 import { api } from '../lib/api';
 import { money, plural, shortDate } from '../lib/format';
 import { useAppState, useInFlightDocs, useLedger, useReimbursements } from '../lib/queries';
@@ -25,7 +33,6 @@ import { useSaveFile } from '../lib/files';
 import { load, save } from '../lib/storage';
 import { restoreExclusions, useSave, useUndo } from '../lib/useSave';
 
-const STATUSES: StatusFilter[] = ['all', 'needs_review', 'outstanding', 'reimbursed', 'excluded'];
 const FILTER_KEY = 'ledger-filter';
 
 export function Ledger() {
@@ -40,7 +47,7 @@ export function Ledger() {
   }, [params, setParams]);
   const { data: state } = useAppState();
   const ledger = useLedger();
-  const reading = (useInFlightDocs().data?.length ?? 0) > 0;
+  const processing = useInFlightDocs().data?.length ?? 0;
   const reimbursements = useReimbursements();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<LedgerEntry | null>(null);
@@ -67,17 +74,18 @@ export function Ledger() {
         : [],
     [ledger.data, state, query, names],
   );
-  // The status switch shows how many each choice holds, with the other filters applied.
+  // The status switch shows how many each choice holds, with the other filters applied
+  // (Processing: the documents being read).
   const counts = useMemo(() => {
     if (!state || !ledger.data) return undefined;
-    const f = filterFromParams(new URLSearchParams(query));
-    return Object.fromEntries(
-      STATUSES.map((status) => [
-        status,
-        filterLedger(ledger.data!, { ...f, status }, state.settings.year_basis, names).length,
-      ]),
-    ) as Record<StatusFilter, number>;
-  }, [ledger.data, state, query, names]);
+    return ledgerCounts(
+      ledger.data,
+      filterFromParams(new URLSearchParams(query)),
+      state.settings.year_basis,
+      names,
+      processing,
+    );
+  }, [ledger.data, state, query, names, processing]);
   const years = useMemo(() => {
     if (!state || !ledger.data) return [];
     const set = new Set<string>();
@@ -86,6 +94,11 @@ export function Ledger() {
     return [...set].sort().reverse();
   }, [ledger.data, state]);
   if (!state) return null;
+  const status = filter.status ?? 'all';
+  // All shows the documents being read in their own section above the entries; Processing
+  // shows only them; the other choices only entries.
+  const showProcessing = status === 'all' || status === 'processing';
+  const withHeadings = status === 'all' && processing > 0;
 
   const setFilter = (patch: Partial<LedgerFilter>) => {
     const next = filterToParams({ ...filter, ...patch });
@@ -116,7 +129,11 @@ export function Ledger() {
             Upload
           </PrimaryButton>
         }
-        sub={`${plural(rows.length, 'entry', 'entries')} · receipts ${money(receiptsTotal)}`}
+        sub={
+          status === 'processing'
+            ? `${plural(processing, 'document')} being read`
+            : `${plural(rows.length, 'entry', 'entries')} · receipts ${money(receiptsTotal)}`
+        }
       />
 
       <LedgerFilters
@@ -127,76 +144,85 @@ export function Ledger() {
         counts={counts}
       />
 
-      {/* Documents still being read sit on top, outside the filters, selection and totals. */}
-      <ReadingRows />
+      {/* Documents still being read: their own section, outside selection and totals. */}
+      {showProcessing && <ProcessingSection heading={withHeadings} />}
 
-      {ledger.isPending ? null : rows.length === 0 ? (
-        // With nothing filtered and something being read, the placeholders say it all.
-        reading && !query ? null : (
+      {status === 'processing' ? (
+        processing === 0 && (
+          <Empty title="Nothing being read" icon="refresh">
+            Uploads and emailed receipts show here while they’re read.
+          </Empty>
+        )
+      ) : ledger.isPending ? null : rows.length === 0 ? (
+        // With nothing filtered and something being read, the Processing section says it all.
+        processing > 0 && !query ? null : (
           <Empty title="Nothing matches" icon="search">
             Try fewer filters, or upload a receipt.
           </Empty>
         )
       ) : (
-        <ul className="px-5 pt-2" aria-label="Entries">
-          <li className="border-b border-line">
-            <button
-              type="button"
-              onClick={() => setSelected(allOn ? new Set() : new Set(rows.map((r) => r.id)))}
-              className="flex items-center gap-3.5 px-3 py-2.5 text-sm text-soft"
-            >
-              <SelectDot on={allOn} />
-              {allOn ? 'Deselect all' : 'Select all'}
-            </button>
-          </li>
-          {rows.map((e) => (
-            <li key={e.id} className="border-b border-line">
-              <div
-                className={cx(
-                  'flex items-center rounded-xl px-3 transition-colors',
-                  selected.has(e.id) ? 'my-1 bg-accent-tint' : 'hover:bg-chip',
-                )}
+        <>
+          {withHeadings && <SectionLabel icon="receipt">Entries</SectionLabel>}
+          <ul className="px-5 pt-2" aria-label="Entries">
+            <li className="border-b border-line">
+              <button
+                type="button"
+                onClick={() => setSelected(allOn ? new Set() : new Set(rows.map((r) => r.id)))}
+                className="flex items-center gap-3.5 px-3 py-2.5 text-sm text-soft"
               >
-                <button
-                  type="button"
-                  aria-label={selected.has(e.id) ? 'Deselect' : 'Select'}
-                  aria-pressed={selected.has(e.id)}
-                  onClick={() => toggle(e.id)}
-                  className="flex h-full flex-none items-center py-3 pr-3.5"
-                >
-                  <SelectDot on={selected.has(e.id)} />
-                </button>
-                <button
-                  onClick={() => setOpen(e)}
-                  className="flex min-w-0 flex-1 items-center gap-3 py-3 text-left"
-                >
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    {/* Provider and details wrap on a phone rather than being cut off. */}
-                    <span className="text-[15px] [overflow-wrap:anywhere]">
-                      {names.providerOf(e)}
-                      {e.type === 'eob' && e.description ? (
-                        <span className="text-soft"> · {e.description}</span>
-                      ) : null}
-                    </span>
-                    <span className="text-xs text-soft [overflow-wrap:anywhere]">
-                      {names.personOf(e)} ·{' '}
-                      {shortDate(entryDate(e, state.settings.year_basis)) || 'No date'}
-                      {names.categoryOf(e) ? ` · ${names.categoryOf(e)}` : ''}
-                      {e.excluded_reason ? ` · ${excludedText(e)}` : ''}
-                    </span>
-                    {e.review_reasons.length > 0 && <ReasonChips reasons={e.review_reasons} />}
-                  </span>
-                  <span className="flex flex-none flex-col items-end gap-1">
-                    <span className="text-[15px] tnum">
-                      {e.type === 'receipt' ? money(e.amount_cents) : ''}
-                    </span>
-                    <StatusChip entry={e} />
-                  </span>
-                </button>
-              </div>
+                <SelectDot on={allOn} />
+                {allOn ? 'Deselect all' : 'Select all'}
+              </button>
             </li>
-          ))}
-        </ul>
+            {rows.map((e) => (
+              <li key={e.id} className="border-b border-line">
+                <div
+                  className={cx(
+                    'flex items-center rounded-xl px-3 transition-colors',
+                    selected.has(e.id) ? 'my-1 bg-accent-tint' : 'hover:bg-chip',
+                  )}
+                >
+                  <button
+                    type="button"
+                    aria-label={selected.has(e.id) ? 'Deselect' : 'Select'}
+                    aria-pressed={selected.has(e.id)}
+                    onClick={() => toggle(e.id)}
+                    className="flex h-full flex-none items-center py-3 pr-3.5"
+                  >
+                    <SelectDot on={selected.has(e.id)} />
+                  </button>
+                  <button
+                    onClick={() => setOpen(e)}
+                    className="flex min-w-0 flex-1 items-center gap-3 py-3 text-left"
+                  >
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      {/* Provider and details wrap on a phone rather than being cut off. */}
+                      <span className="text-[15px] [overflow-wrap:anywhere]">
+                        {names.providerOf(e)}
+                        {e.type === 'eob' && e.description ? (
+                          <span className="text-soft"> · {e.description}</span>
+                        ) : null}
+                      </span>
+                      <span className="text-xs text-soft [overflow-wrap:anywhere]">
+                        {names.personOf(e)} ·{' '}
+                        {shortDate(entryDate(e, state.settings.year_basis)) || 'No date'}
+                        {names.categoryOf(e) ? ` · ${names.categoryOf(e)}` : ''}
+                        {e.excluded_reason ? ` · ${excludedText(e)}` : ''}
+                      </span>
+                      {e.review_reasons.length > 0 && <ReasonChips reasons={e.review_reasons} />}
+                    </span>
+                    <span className="flex flex-none flex-col items-end gap-1">
+                      <span className="text-[15px] tnum">
+                        {e.type === 'receipt' ? money(e.amount_cents) : ''}
+                      </span>
+                      <StatusChip entry={e} />
+                    </span>
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {(reimbursements.data?.length ?? 0) > 0 && (

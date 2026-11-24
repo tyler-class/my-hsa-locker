@@ -11,6 +11,8 @@ import type {
 } from '@shared/types';
 import type { Totals, YearTotals } from '@shared/logic';
 import { api } from './api';
+import { needsCopy } from './reading';
+import { copyOldPhoto } from './readingCopy';
 
 export const keys = {
   state: ['state'] as const,
@@ -55,7 +57,7 @@ export function useAppState() {
 export function useInFlightDocs() {
   const { data: state } = useAppState();
   const qc = useQueryClient();
-  return useQuery({
+  const q = useQuery({
     queryKey: keys.inFlight,
     queryFn: async () => {
       const before = qc.getQueryData<DocumentSummary[]>(keys.inFlight) ?? [];
@@ -74,6 +76,17 @@ export function useInFlightDocs() {
         ? READING_POLL_MS
         : false,
   });
+  // A photo being read with no reading copy (sent before the app made them) gets one made from
+  // its original here, once per document: reading the full-size original is slow and can fail.
+  const docs = q.data;
+  useEffect(() => {
+    for (const d of docs ?? [])
+      if (needsCopy(d))
+        void copyOldPhoto(d).then((sent) => {
+          if (sent) void qc.invalidateQueries({ queryKey: keys.inFlight });
+        });
+  }, [docs, qc]);
+  return q;
 }
 
 /**

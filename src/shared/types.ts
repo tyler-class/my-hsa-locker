@@ -81,6 +81,11 @@ export interface DocumentSummary {
   received_at: string;
   processed_at: string | null;
   entry_count: number;
+  /**
+   * Only in the list of documents being read (`status=in_flight`): whether a photo has the
+   * smaller reading copy the model reads instead of the original.
+   */
+  has_reading_copy?: boolean;
 }
 
 export interface Entry {

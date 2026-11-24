@@ -2,7 +2,22 @@
 import type { LedgerEntry, YearBasis } from '../types';
 import { entryDate, entryStatus, needsReview, type EntryStatus } from './summary';
 
-export type StatusFilter = 'all' | 'outstanding' | 'reimbursed' | 'excluded' | 'needs_review';
+/**
+ * The Ledger's status choices. `processing` is the documents still being read: they aren't
+ * entries yet, so no entry matches it (the Ledger shows their placeholder rows instead).
+ */
+export type StatusFilter =
+  'all' | 'processing' | 'outstanding' | 'reimbursed' | 'excluded' | 'needs_review';
+
+/** The status choices in the order the Ledger shows them. */
+export const LEDGER_STATUSES: StatusFilter[] = [
+  'all',
+  'processing',
+  'needs_review',
+  'outstanding',
+  'reimbursed',
+  'excluded',
+];
 export type TypeFilter = 'all' | 'receipt' | 'eob';
 export type SortKey = 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc' | 'added_desc';
 
@@ -25,6 +40,7 @@ export interface FilterNames {
 
 export function matchesStatus(e: LedgerEntry, s: StatusFilter | undefined): boolean {
   if (!s || s === 'all') return true;
+  if (s === 'processing') return false;
   if (s === 'needs_review') return needsReview(e);
   const st: EntryStatus = entryStatus(e);
   return st === s;
@@ -84,6 +100,28 @@ export function filterLedger(
     }
   });
   return out;
+}
+
+/**
+ * How many each status choice holds, with the other filters applied. Processing counts the
+ * documents being read (`processing`: how many the in-flight list holds), whatever the other
+ * filters, since there's nothing in them to filter on yet; All counts entries.
+ */
+export function ledgerCounts(
+  entries: LedgerEntry[],
+  f: LedgerFilter,
+  basis: YearBasis,
+  names: FilterNames | undefined,
+  processing: number,
+): Record<StatusFilter, number> {
+  return Object.fromEntries(
+    LEDGER_STATUSES.map((status) => [
+      status,
+      status === 'processing'
+        ? processing
+        : filterLedger(entries, { ...f, status }, basis, names).length,
+    ]),
+  ) as Record<StatusFilter, number>;
 }
 
 /** Reads a filter from URL search params (used by both the app's URL and the CSV endpoint). */

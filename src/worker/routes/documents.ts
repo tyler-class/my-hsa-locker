@@ -123,7 +123,18 @@ documents.get('/documents', async (c) => {
     ...binds,
     limit,
   );
-  return c.json({ documents: rows.map(toDocument) });
+  const docs = rows.map(toDocument);
+  // The documents being read say whether a photo has its smaller reading copy, so the app can
+  // make one for a photo sent before it made them. A head per photo: the list is short.
+  if (status === 'in_flight')
+    await Promise.all(
+      docs.map(async (d) => {
+        d.has_reading_copy = d.mime.startsWith('image/')
+          ? (await c.env.FILES.head(readingCopyKey(d.id))) !== null
+          : false;
+      }),
+    );
+  return c.json({ documents: docs });
 });
 
 async function loadDoc(db: D1Database, id: string) {

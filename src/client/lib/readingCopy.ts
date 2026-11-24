@@ -3,6 +3,9 @@
 // copy is made here (the browser can decode and scale images; a Worker can't, cleanly) and sent
 // after the original, which is uploaded and kept untouched.
 
+import { uploadReadingCopy } from './api';
+import { needsCopy } from './reading';
+
 /** Long side of the reading copy, in pixels. */
 export const READING_EDGE = 2048;
 /** Photos already this small (and in a type every model reads) are read as they are. */
@@ -47,5 +50,40 @@ export async function makeReadingCopy(file: File): Promise<Blob | null> {
     return null;
   } finally {
     bmp.close();
+  }
+}
+
+// ---------- Photos sent before the app made reading copies ----------
+
+/** Documents this app session has already tried to make a copy for: once each, never a loop. */
+const tried = new Set<string>();
+
+/**
+ * For a photo being read that has no reading copy (sent before the app made them, or from a
+ * browser that couldn't), makes one from the original and sends it: once per document per app
+ * session, whether or not it works. Posting the copy makes a photo waiting on a retry due now.
+ * Returns whether it sent one.
+ */
+export async function copyOldPhoto(d: {
+  id: string;
+  filename: string;
+  mime: string;
+  status: string;
+  has_reading_copy?: boolean;
+}): Promise<boolean> {
+  if (!needsCopy(d) || tried.has(d.id)) return false;
+  tried.add(d.id);
+  try {
+    const res = await fetch(`/api/files/${encodeURIComponent(d.id)}`, {
+      credentials: 'same-origin',
+    });
+    if (!res.ok) return false;
+    const blob = await res.blob();
+    const copy = await makeReadingCopy(new File([blob], d.filename, { type: d.mime }));
+    if (!copy) return false;
+    await uploadReadingCopy(d.id, copy);
+    return true;
+  } catch {
+    return false; // best effort: the original is read as it is
   }
 }

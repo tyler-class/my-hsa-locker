@@ -8,6 +8,7 @@ import { cx, GhostButton, PrimaryButton, Sheet, SlideToggle, TextInput } from '.
 
 const STATUS_TABS: [StatusFilter, string][] = [
   ['all', 'All'],
+  ['processing', 'Processing'],
   ['needs_review', 'Needs review'],
   ['outstanding', 'Reimbursable'],
   ['reimbursed', 'Reimbursed'],
@@ -71,7 +72,10 @@ export function LedgerFilters({
         label="Status"
         value={filter.status ?? 'all'}
         onChange={(status) => setFilter({ status })}
-        options={STATUS_TABS.map(([k, label]) => [
+        options={STATUS_TABS.filter(
+          // Processing is offered while something is being read (or it's the one chosen).
+          ([k]) => k !== 'processing' || (counts?.processing ?? 0) > 0 || filter.status === k,
+        ).map(([k, label]) => [
           k,
           counts ? (
             <>

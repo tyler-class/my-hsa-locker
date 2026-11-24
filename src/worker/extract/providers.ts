@@ -45,9 +45,44 @@ export class ProviderError extends Error {
   constructor(
     message: string,
     public retryable: boolean,
+    /** A short, content-free reason from the provider (its error type or code), for diagnosis. */
+    public detail?: string,
   ) {
     super(message);
+    this.name = 'ProviderError';
   }
+}
+
+/**
+ * The provider's error type or code from an error reply ("overloaded_error",
+ * "RESOURCE_EXHAUSTED"), never its message, which can echo the document.
+ */
+export function errorKind(body: unknown): string | undefined {
+  const e = (body as { error?: unknown })?.error;
+  if (!e || typeof e !== 'object') return undefined;
+  const o = e as { type?: unknown; code?: unknown; status?: unknown };
+  const kind = [o.type, o.code, o.status].find(
+    (v) => (typeof v === 'string' && v) || typeof v === 'number',
+  );
+  return kind === undefined
+    ? undefined
+    : String(kind)
+        .replace(/[^\w.-]/g, '')
+        .slice(0, 60);
+}
+
+/**
+ * An error in a few words (a Workers AI failure, say): its first line, quoted text taken out (in case it quotes
+ * the input), trimmed. "AiError: 3040: Capacity temporarily exceeded".
+ */
+export function shortReason(e: unknown): string | undefined {
+  if (!(e instanceof Error)) return undefined;
+  const line = `${e.name && e.name !== 'Error' ? `${e.name}: ` : ''}${e.message}`.split('\n')[0]!;
+  const clean = line
+    .replace(/(["'`]).*?\1/g, '…')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return clean ? clean.slice(0, 120) : undefined;
 }
 
 async function postJson(url: string, headers: Record<string, string>, body: unknown) {
@@ -62,8 +97,10 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
     throw new ProviderError('network', true);
   }
   if (!res.ok) {
-    // Only the status goes into errors and logs: bodies can echo document contents.
-    throw new ProviderError(`http_${res.status}`, res.status === 429 || res.status >= 500);
+    // Only the status and the error's type or code go into errors and logs: bodies can echo
+    // document contents.
+    const kind = errorKind(await res.json().catch(() => null));
+    throw new ProviderError(`http_${res.status}`, res.status === 429 || res.status >= 500, kind);
   }
   return (await res.json()) as Record<string, unknown>;
 }
@@ -128,7 +165,11 @@ function workersAi(env: Cloudflare.Env): LlmProvider {
       } catch (e) {
         const msg = e instanceof Error ? e.message : '';
         // "JSON Mode couldn't be met" and capacity errors are worth another try later.
-        throw new ProviderError(/json mode/i.test(msg) ? 'json_mode' : 'workers_ai_error', true);
+        throw new ProviderError(
+          /json mode/i.test(msg) ? 'json_mode' : 'workers_ai_error',
+          true,
+          shortReason(e),
+        );
       }
       return { text: workersAiText(out), model };
     },

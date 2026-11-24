@@ -32,6 +32,7 @@ import {
   getProvider,
   ProviderError,
   toBase64,
+  shortReason,
   type LlmProvider,
   type ModelCall,
 } from './providers';
@@ -186,12 +187,43 @@ async function ask(provider: LlmProvider, call: ModelCall, ctx: ReadContext) {
       { ...call, repair: { previous: first.text.slice(0, 8000), ask: REPAIR_PROMPT } },
       ctx.timeLeft(),
     );
-    return {
-      json: extractionSchema.parse(parseModelJson(second.text)),
-      raw: second.text,
-      model: second.model,
-    };
+    try {
+      return {
+        json: extractionSchema.parse(parseModelJson(second.text)),
+        raw: second.text,
+        model: second.model,
+      };
+    } catch (e) {
+      // Worth another try later: a model's reply varies from one call to the next.
+      throw new ProviderError('bad_reply', true, badReplyReason(e));
+    }
   }
+}
+
+/** Why a reply couldn't be used, in a few words and none of the reply's contents. */
+export function badReplyReason(e: unknown): string {
+  const issues = (e as { issues?: { path?: unknown[]; code?: unknown }[] } | null)?.issues;
+  if (Array.isArray(issues)) {
+    const where = issues
+      .slice(0, 3)
+      .map((i) => `${(i.path ?? []).join('.') || 'reply'} ${String(i.code ?? 'invalid')}`)
+      .join(', ');
+    return `didn’t fit the form (${where})`.slice(0, 160);
+  }
+  if (e instanceof SyntaxError) return 'not valid JSON';
+  if (e instanceof Error && e.message === 'no_json') return 'no JSON in the reply';
+  return 'unreadable reply';
+}
+
+/**
+ * What a failed read stores in `documents.error` and the log: the provider's code and its short
+ * reason ("workers_ai_error: AiError: 3040: Capacity temporarily exceeded", "bad_reply: no JSON
+ * in the reply", "http_529: overloaded_error"), never document contents.
+ */
+export function describeFailure(e: unknown): string {
+  if (e instanceof ProviderError) return e.detail ? `${e.message}: ${e.detail}` : e.message;
+  if (e instanceof Error) return shortReason(e) ?? (e.name || 'error');
+  return 'error';
 }
 
 async function readDocument(
@@ -556,9 +588,8 @@ async function readAndStore(
         .run();
       return 'deferred';
     }
-    // Log the error class only, never contents.
-    const code =
-      e instanceof ProviderError ? e.message : e instanceof Error ? e.name || 'error' : 'error';
+    // A code and a short reason, never contents.
+    const code = describeFailure(e);
     const retryable = !(e instanceof ProviderError) || e.retryable;
     const giveUp = !retryable || doc.attempts >= MAX_ATTEMPTS;
     console.warn(`document ${id}: attempt ${doc.attempts} failed (${code})`);
