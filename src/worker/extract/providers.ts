@@ -21,7 +21,7 @@ export const WORKERS_AI_VISION_FALLBACK = '@cf/meta/llama-4-scout-17b-16e-instru
 const WORKERS_AI_MAX_TOKENS = { text: 4096, vision: 8192 } as const;
 
 const DEFAULT_MODELS = {
-  anthropic: 'claude-sonnet-5-5',
+  anthropic: 'claude-opus-5-5',
   openai: 'gpt-5-mini',
   gemini: 'gemini-2.5-flash', // HSA Wizard's model
 } as const;
@@ -94,6 +94,12 @@ export function shortReason(e: unknown): string | undefined {
   return clean ? clean.slice(0, 120) : undefined;
 }
 
+/** An error reply's message, short and with quoted text taken out (it could echo the input). */
+function requestProblem(body: unknown): string | undefined {
+  const m = (body as { error?: { message?: unknown } } | null)?.error?.message;
+  return typeof m === 'string' && m ? shortReason(new Error(m)) : undefined;
+}
+
 async function postJson(url: string, headers: Record<string, string>, body: unknown) {
   let res: Response;
   try {
@@ -108,8 +114,16 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
   if (!res.ok) {
     // Only the status and the error's type or code go into errors and logs: bodies can echo
     // document contents.
-    const kind = errorKind(await res.json().catch(() => null));
-    throw new ProviderError(`http_${res.status}`, res.status === 429 || res.status >= 500, kind);
+    const err = await res.json().catch(() => null);
+    const kind = errorKind(err);
+    // A 400 is about the request, not the document: its message (quoted text taken out) says
+    // what was wrong ("temperature: not supported for this model").
+    const why = res.status === 400 || res.status === 404 ? requestProblem(err) : undefined;
+    throw new ProviderError(
+      `http_${res.status}`,
+      res.status === 429 || res.status >= 500,
+      [kind, why].filter(Boolean).join(': ') || undefined,
+    );
   }
   return (await res.json()) as Record<string, unknown>;
 }
@@ -282,15 +296,36 @@ function anthropic(env: Cloudflare.Env, key: string, chosen?: string): LlmProvid
       }
       const res = await postJson(
         gatewayUrl(env, 'anthropic', 'https://api.anthropic.com') + '/v1/messages',
-        { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        { model, max_tokens: 4096, temperature: 0.1, system: call.system, messages },
+        {
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'server-side-fallback-2026-07-01',
+        },
+        {
+          model,
+          // Current models think before answering and take no temperature (it's a 400): room for
+          // both, and low effort, which is plenty for reading a receipt.
+          max_tokens: 16000,
+          output_config: { effort: 'low' },
+          // If a safety check declines the read, it's retried on a fallback model.
+          fallbacks: 'default',
+          system: call.system,
+          messages,
+        },
       );
+      if (res.stop_reason === 'refusal')
+        throw new ProviderError('refused', false, 'the model declined to read this document');
       const blocks = (res.content as { type: string; text?: string }[] | undefined) ?? [];
       const text = blocks
         .filter((b) => b.type === 'text')
         .map((b) => b.text ?? '')
         .join('');
-      if (!text) throw new ProviderError('empty_reply', true);
+      if (!text)
+        throw new ProviderError(
+          'empty_reply',
+          true,
+          typeof res.stop_reason === 'string' ? `stop=${res.stop_reason}` : undefined,
+        );
       return { text, model };
     },
   };
@@ -517,12 +552,16 @@ export function getProvider(env: Cloudflare.Env, saved: KeyConfig | null = null)
 export async function checkKey(
   provider: KeyProvider,
   key: string,
-): Promise<'ok' | 'refused' | 'unreachable'> {
+  model?: string | null,
+): Promise<'ok' | 'refused' | 'unreachable' | 'no_model'> {
   const req =
     provider === 'anthropic'
-      ? new Request('https://api.anthropic.com/v1/models?limit=1', {
-          headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        })
+      ? new Request(
+          `https://api.anthropic.com/v1/models/${encodeURIComponent(model || DEFAULT_MODELS.anthropic)}`,
+          {
+            headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+          },
+        )
       : provider === 'openai'
         ? new Request('https://api.openai.com/v1/models', {
             headers: { Authorization: `Bearer ${key}` },
@@ -538,6 +577,8 @@ export async function checkKey(
   }
   await res.body?.cancel().catch(() => {});
   if (res.ok) return 'ok';
+  // Anthropic: the key works but there's no such model.
+  if (res.status === 404 && provider === 'anthropic') return 'no_model';
   // Gemini answers a bad key with 400 API_KEY_INVALID.
   if (res.status === 400 || res.status === 401 || res.status === 403) return 'refused';
   return 'unreachable';

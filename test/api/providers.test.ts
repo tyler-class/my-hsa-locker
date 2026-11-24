@@ -210,3 +210,41 @@ describe('a bring-your-own key', () => {
     }
   });
 });
+
+describe('the Anthropic request', () => {
+  it('sends no temperature, gives the model room to think, and says why a 400 failed', async () => {
+    const { env } = fakeAi({});
+    Object.assign(env, { LLM_PROVIDER: 'anthropic', LLM_API_KEY: 'sk-ant-shape-test' });
+    const realFetch = globalThis.fetch;
+    let sent: Record<string, unknown> = {};
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body));
+      return new Response(
+        JSON.stringify({ stop_reason: 'end_turn', content: [{ type: 'text', text: '{"ok":1}' }] }),
+      );
+    }) as typeof fetch;
+    try {
+      const r = await getProvider(env).complete(photo);
+      expect(r.text).toBe('{"ok":1}');
+      expect(sent).not.toHaveProperty('temperature');
+      expect(sent.model).toBe('claude-opus-5-5');
+      expect(sent.max_tokens).toBeGreaterThanOrEqual(16000);
+
+      globalThis.fetch = (async () =>
+        new Response(
+          JSON.stringify({
+            error: { type: 'invalid_request_error', message: 'temperature: not supported' },
+          }),
+          { status: 400 },
+        )) as typeof fetch;
+      const err = await getProvider(env)
+        .complete(photo)
+        .catch((e: unknown) => e);
+      expect((err as ProviderError).detail).toBe(
+        'invalid_request_error: temperature: not supported',
+      );
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});

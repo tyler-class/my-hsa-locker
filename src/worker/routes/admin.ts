@@ -800,7 +800,13 @@ const aiKeyInput = z.object({
  */
 admin.post('/ai/key', async (c) => {
   const input = await body(c, aiKeyInput);
-  const check = await checkKey(input.provider, input.key);
+  const check = await checkKey(input.provider, input.key, input.model);
+  if (check === 'no_model')
+    throw new ApiError(
+      400,
+      'no_model',
+      'The key works, but that model wasn’t found. Check its name.',
+    );
   if (check === 'refused')
     throw new ApiError(400, 'key_refused', 'That key was refused. Check it and try again.');
   if (check === 'unreachable')
