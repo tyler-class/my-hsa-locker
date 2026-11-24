@@ -13,6 +13,7 @@ import {
 } from '@shared/logic';
 import {
   bulkEntries,
+  entryCreate,
   entryPatch,
   entryRestore,
   reimbursementInput,
@@ -37,6 +38,7 @@ import {
   updateStmt,
 } from '../db';
 import { refreshDocs, refreshDocStatus } from '../status';
+import { sha256Hex } from '../store';
 import { ApiError, body, notFound, type AppEnv } from './util';
 
 export const entries = new Hono<AppEnv>();
@@ -142,6 +144,74 @@ entries.patch('/entries/:id', async (c) => {
   }).run();
   await refreshDocStatus(db, before.document_id);
   return c.json(await loadEntry(db, before.id));
+});
+
+/** The filename of a document made for an entry typed in by hand, with no file. */
+export const MANUAL_FILENAME = 'Entered by hand';
+
+/**
+ * An entry typed in by hand, with no document. Every entry belongs to a document, so this one
+ * gets its own: a short text note saying so (kept as its file), already processed, never read
+ * by the model.
+ */
+entries.post('/entries', async (c) => {
+  const db = c.env.DB;
+  const input = await body(c, entryCreate);
+  const settings = await loadSettings(db);
+  const now = nowIso();
+  const docId = newId();
+  const id = newId();
+  const bytes = new TextEncoder().encode(
+    `This entry was typed into HSA Locker by hand on ${now.slice(0, 10)}; there is no document.\n(${docId})\n`,
+  );
+  const key = `docs/${docId}.txt`;
+  await c.env.FILES.put(key, bytes, {
+    httpMetadata: { contentType: 'text/plain' },
+    customMetadata: { document_id: docId },
+  });
+  const entry = applyHsaCards(
+    {
+      ...(input as Partial<Entry>),
+      excluded_reason: input.excluded_reason ?? null,
+      excluded_auto: false,
+    } as Entry,
+    input.excluded_reason ? [] : settings.hsa_cards,
+  );
+  await db.batch([
+    insertStmt(db, 'documents', {
+      id: docId,
+      kind: input.type,
+      status: 'processed',
+      source: 'upload',
+      source_meta_json: JSON.stringify({ manual: true }),
+      file_key: key,
+      filename: MANUAL_FILENAME,
+      mime: 'text/plain',
+      size_bytes: bytes.byteLength,
+      sha256: await sha256Hex(bytes),
+      review_reasons_json: '[]',
+      attempts: 0,
+      received_at: now,
+      processed_at: now,
+      created_at: now,
+      updated_at: now,
+    }),
+    insertStmt(db, 'entries', {
+      id,
+      document_id: docId,
+      ...input,
+      ...(input.type === 'eob' ? { amount_cents: null, card_last4: null } : {}),
+      excluded_reason: input.type === 'eob' ? null : entry.excluded_reason,
+      excluded_auto: entry.excluded_auto ? 1 : 0,
+      review_reasons_json: '[]',
+      reviewed_at: now,
+      sort_order: 0,
+      created_at: now,
+      updated_at: now,
+    }),
+  ]);
+  await refreshDocStatus(db, docId);
+  return c.json(await loadEntry(db, id), 201);
 });
 
 /** Approve: the user has checked it. Clears every reason. */

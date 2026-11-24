@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { EXCLUDED_REASONS } from '@shared/lookups';
 import { matchProvider } from '@shared/logic';
 import type { AppState, Entry, ExcludedReason } from '@shared/types';
+import { api } from '../lib/api';
 import { centsInput, parseTypedMoney } from '../lib/format';
-import { ErrorText, TextArea, TextInput } from './ui';
+import { useSave } from '../lib/useSave';
+import { ErrorText, GhostButton, PrimaryButton, TextArea, TextInput } from './ui';
 import { Select } from './Select';
 
 export type EntryDraftForm = {
@@ -107,6 +109,81 @@ function Field({
   );
 }
 
+const NEW = '__new__';
+
+/**
+ * A pick list with "New …" at the end: choosing it opens a name field right there, and Add
+ * makes the person, provider or category and picks it.
+ */
+function PickOrAdd({
+  label,
+  noun,
+  path,
+  value,
+  onChange,
+  options,
+  empty,
+}: {
+  label: string;
+  /** "patient", "provider", "category" */
+  noun: string;
+  /** The API path that creates one (returns it with its id). */
+  path: '/people' | '/providers' | '/categories';
+  value: string;
+  onChange: (id: string) => void;
+  options: [string, string][];
+  empty: string;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const { run, busy, error } = useSave();
+  const add = async () => {
+    const n = name.trim();
+    if (!n) return;
+    const made = await run(() => api.post<{ id: string }>(path, { name: n }));
+    if (made) {
+      onChange(made.id);
+      setAdding(false);
+      setName('');
+    }
+  };
+  if (adding)
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <TextInput
+            autoFocus
+            className="min-w-0 flex-1"
+            placeholder={`New ${noun}’s name`}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void add();
+              } else if (e.key === 'Escape') setAdding(false);
+            }}
+          />
+          <PrimaryButton type="button" disabled={busy || !name.trim()} onClick={() => void add()}>
+            Add
+          </PrimaryButton>
+          <GhostButton type="button" onClick={() => setAdding(false)}>
+            Cancel
+          </GhostButton>
+        </div>
+        {error && <ErrorText>{error}</ErrorText>}
+      </div>
+    );
+  return (
+    <Select
+      label={label}
+      value={value}
+      onChange={(v) => (v === NEW ? setAdding(true) : onChange(v))}
+      options={[['', empty], ...options, [NEW, `New ${noun}…`]]}
+    />
+  );
+}
+
 export function EntryForm({
   value,
   onChange,
@@ -165,28 +242,28 @@ export function EntryForm({
         <div />
       )}
       <Field label={printed?.patient ? `Patient (printed “${printed.patient}”)` : 'Patient'} wide>
-        <Select
+        <PickOrAdd
           label="Patient"
+          noun="patient"
+          path="/people"
           value={value.person_id}
           onChange={(v) => set('person_id', v)}
-          options={[
-            ['', 'Not set'],
-            ...state.people.map((p) => [p.id, p.name] as [string, string]),
-          ]}
+          empty="Not set"
+          options={state.people.map((p) => [p.id, p.name])}
         />
       </Field>
       <Field
         label={printed?.provider ? `Provider (printed “${printed.provider}”)` : 'Provider'}
         wide
       >
-        <Select
+        <PickOrAdd
           label="Provider"
+          noun="provider"
+          path="/providers"
           value={value.provider_id}
           onChange={(v) => set('provider_id', v)}
-          options={[
-            ['', 'Not set'],
-            ...state.providers.map((p) => [p.id, p.name] as [string, string]),
-          ]}
+          empty="Not set"
+          options={state.providers.map((p) => [p.id, p.name])}
         />
         {suggested && (
           <button
@@ -266,14 +343,14 @@ export function EntryForm({
         </>
       )}
       <Field label="Category">
-        <Select
+        <PickOrAdd
           label="Category"
+          noun="category"
+          path="/categories"
           value={value.category_id}
           onChange={(v) => set('category_id', v)}
-          options={[
-            ['', 'None'],
-            ...state.categories.map((p) => [p.id, p.name] as [string, string]),
-          ]}
+          empty="None"
+          options={state.categories.map((p) => [p.id, p.name])}
         />
       </Field>
       {value.type === 'receipt' ? (

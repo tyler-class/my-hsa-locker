@@ -8,6 +8,7 @@ import { bytes } from '../lib/format';
 import { useRefreshData } from '../lib/queries';
 import { isPhoto, makeReadingCopy } from '../lib/readingCopy';
 import { Icon } from './Icon';
+import { NewEntryForm } from './NewEntryForm';
 import { cx, GhostButton, PrimaryButton, Sheet } from './ui';
 
 interface Item {
@@ -36,6 +37,8 @@ const IN_FLIGHT = ['pending', 'processing', 'failed'] as const;
 export function UploadSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [items, setItems] = useState<Item[]>([]);
   const [drag, setDrag] = useState(false);
+  /** Typing an entry in by hand instead of adding a file. */
+  const [manual, setManual] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const refresh = useRefreshData();
@@ -96,6 +99,7 @@ export function UploadSheet({ open, onClose }: { open: boolean; onClose: () => v
 
   const close = () => {
     setItems([]);
+    setManual(false);
     onClose();
   };
   const anyReview = shown.some((i) => i.state === 'review');
@@ -104,105 +108,124 @@ export function UploadSheet({ open, onClose }: { open: boolean; onClose: () => v
     <Sheet
       open={open}
       onClose={close}
-      title="Add receipts"
-      sub="PDFs or photos. Each is read automatically."
+      title={manual ? 'Enter by hand' : 'Add receipts'}
+      closeButton={manual}
+      sub={manual ? 'No document needed.' : 'PDFs or photos. Each is read automatically.'}
       footer={
-        <>
-          <GhostButton onClick={close}>Close</GhostButton>
-          {anyReview && (
-            <PrimaryButton
-              onClick={() => {
-                close();
-                nav('/review');
-              }}
-            >
-              Go to Review
-            </PrimaryButton>
-          )}
-        </>
+        manual ? undefined : (
+          <>
+            <GhostButton onClick={close}>Close</GhostButton>
+            {anyReview && (
+              <PrimaryButton
+                onClick={() => {
+                  close();
+                  nav('/review');
+                }}
+              >
+                Go to Review
+              </PrimaryButton>
+            )}
+          </>
+        )
       }
     >
-      <div className="flex flex-col gap-4 py-2">
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDrag(true);
+      {manual ? (
+        <NewEntryForm
+          onCancel={() => setManual(false)}
+          onDone={() => {
+            setManual(false);
+            close();
           }}
-          onDragLeave={() => setDrag(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDrag(false);
-            add(e.dataTransfer.files);
-          }}
-          className={cx(
-            'flex flex-col items-center gap-3 rounded-xl border-2 border-dashed px-4 py-8 text-center',
-            drag ? 'border-accent bg-accent-tint' : 'border-line',
-          )}
-        >
-          <Icon name="upload" size={26} className="text-accent" />
-          <p className="hidden text-sm text-soft sm:block">Drop files here, or</p>
-          <div className="flex flex-wrap justify-center gap-2">
-            <PrimaryButton icon="file" onClick={() => fileRef.current?.click()}>
-              Choose files
-            </PrimaryButton>
-            <PrimaryButton
-              tone="secondary"
-              icon="camera"
-              className="sm:hidden"
-              onClick={() => cameraRef.current?.click()}
-            >
-              Take photo
-            </PrimaryButton>
-          </div>
-          <input
-            ref={fileRef}
-            type="file"
-            multiple
-            hidden
-            accept="image/*,application/pdf"
-            onChange={(e) => (add(e.target.files), (e.target.value = ''))}
-          />
-          <input
-            ref={cameraRef}
-            type="file"
-            hidden
-            accept="image/*"
-            capture="environment"
-            onChange={(e) => (add(e.target.files), (e.target.value = ''))}
-          />
-        </div>
-        {shown.length > 0 && (
-          <ul className="flex flex-col">
-            {shown.map((i) => (
-              <li
-                key={i.key}
-                className="flex items-center gap-3 border-b border-line py-2.5 text-sm"
+        />
+      ) : (
+        <div className="flex flex-col gap-4 py-2">
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDrag(true);
+            }}
+            onDragLeave={() => setDrag(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDrag(false);
+              add(e.dataTransfer.files);
+            }}
+            className={cx(
+              'flex flex-col items-center gap-3 rounded-xl border-2 border-dashed px-4 py-8 text-center',
+              drag ? 'border-accent bg-accent-tint' : 'border-line',
+            )}
+          >
+            <Icon name="upload" size={26} className="text-accent" />
+            <p className="hidden text-sm text-soft sm:block">Drop files here, or</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              <PrimaryButton icon="file" onClick={() => fileRef.current?.click()}>
+                Choose files
+              </PrimaryButton>
+              <PrimaryButton
+                tone="secondary"
+                icon="camera"
+                className="sm:hidden"
+                onClick={() => cameraRef.current?.click()}
               >
-                <Icon name="file" size={16} className="text-faint" />
-                <span className="min-w-0 flex-1 truncate">{i.file.name}</span>
-                <span className="text-xs text-faint tnum">{bytes(i.file.size)}</span>
-                <span
-                  className={cx(
-                    'w-28 text-right text-xs',
-                    i.state === 'error'
-                      ? 'text-danger'
-                      : i.state === 'review'
-                        ? 'text-warn'
-                        : i.state === 'done'
-                          ? 'text-ok'
-                          : 'text-soft',
-                  )}
-                  title={i.message}
+                Take photo
+              </PrimaryButton>
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              hidden
+              accept="image/*,application/pdf"
+              onChange={(e) => (add(e.target.files), (e.target.value = ''))}
+            />
+            <input
+              ref={cameraRef}
+              type="file"
+              hidden
+              accept="image/*"
+              capture="environment"
+              onChange={(e) => (add(e.target.files), (e.target.value = ''))}
+            />
+          </div>
+          {shown.length > 0 && (
+            <ul className="flex flex-col">
+              {shown.map((i) => (
+                <li
+                  key={i.key}
+                  className="flex items-center gap-3 border-b border-line py-2.5 text-sm"
                 >
-                  {i.state === 'uploading'
-                    ? `${Math.round(i.progress * 100)}%`
-                    : (i.message ?? LABEL[i.state])}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                  <Icon name="file" size={16} className="text-faint" />
+                  <span className="min-w-0 flex-1 truncate">{i.file.name}</span>
+                  <span className="text-xs text-faint tnum">{bytes(i.file.size)}</span>
+                  <span
+                    className={cx(
+                      'w-28 text-right text-xs',
+                      i.state === 'error'
+                        ? 'text-danger'
+                        : i.state === 'review'
+                          ? 'text-warn'
+                          : i.state === 'done'
+                            ? 'text-ok'
+                            : 'text-soft',
+                    )}
+                    title={i.message}
+                  >
+                    {i.state === 'uploading'
+                      ? `${Math.round(i.progress * 100)}%`
+                      : (i.message ?? LABEL[i.state])}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="text-center text-sm text-soft">
+            No document?{' '}
+            <button type="button" className="text-accent" onClick={() => setManual(true)}>
+              Enter one by hand
+            </button>
+          </p>
+        </div>
+      )}
     </Sheet>
   );
 }

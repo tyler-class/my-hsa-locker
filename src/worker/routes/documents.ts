@@ -233,6 +233,8 @@ documents.post('/documents/:id/reprocess', async (c) => {
   const row = await loadDoc(c.env.DB, c.req.param('id'));
   if (row.status === 'discarded')
     throw new ApiError(409, 'discarded', 'This document was discarded.');
+  if (String(row.source_meta_json ?? '').includes('"manual":true'))
+    throw new ApiError(409, 'manual', 'This entry was typed in by hand: there’s nothing to read.');
   if (await reimbursedCount(c.env.DB, String(row.id)))
     throw new ApiError(
       409,
