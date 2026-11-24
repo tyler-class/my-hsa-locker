@@ -216,7 +216,9 @@ Details are in [docs/email-setup.md](docs/email-setup.md).
 
 ## Choose the AI model
 
-By default documents are read with Workers AI inside your Cloudflare account; nothing to set up. To use your own Anthropic, OpenAI or Gemini key instead, add Worker secrets in the Cloudflare dashboard (**Workers & Pages → hsa-locker → Settings → Variables and Secrets**):
+By default documents are read with Workers AI inside your Cloudflare account; nothing to set up. To use your own Anthropic, OpenAI or Gemini key instead, open **Settings → Reading documents → Use your own key**, pick the provider and paste the key. The app asks the provider whether it takes the key before saving it; it's kept in your copy's database, never shown again, never sent to the browser and never put in a backup. **Remove key** goes back to Workers AI. If the provider later refuses the key, reading falls back to Workers AI on its own.
+
+You can set the key as Worker secrets instead (**Workers & Pages → hsa-locker → Settings → Variables and Secrets**); a key saved in the app is used in their place:
 
 | Secret         | Value                                   |
 | -------------- | --------------------------------------- |
@@ -224,7 +226,7 @@ By default documents are read with Workers AI inside your Cloudflare account; no
 | `LLM_API_KEY`  | your API key                            |
 | `LLM_MODEL`    | optional, to override the default model |
 
-With your own key, documents (which contain health information) are sent to that company. Keys live only in Worker secrets and can’t be seen or changed from the app. **Settings → Reading documents → Test extraction** checks the setup. Optional: set `AI_GATEWAY_ID` to route Workers AI calls through an [AI Gateway](https://developers.cloudflare.com/ai-gateway/).
+With your own key, documents (which contain health information) are sent to that company. **Settings → Reading documents → Test extraction** checks the setup. Optional: set `AI_GATEWAY_ID` to route Workers AI calls through an [AI Gateway](https://developers.cloudflare.com/ai-gateway/).
 
 Scanned PDFs (no text layer) can’t be read by Workers AI; they go to Review so you can type them in or upload photos of the pages. Anthropic, OpenAI and Gemini keys read scanned PDFs directly.
 
@@ -320,7 +322,7 @@ Tests never call a real model: they use a fake provider and synthetic documents.
 
 - **Cloudflare Workers** with static assets. **Hono** serves the API under `/api`; **D1** stores records; **R2** stores original files; **Workers AI** reads documents. SQL migrations live in `migrations/`.
 - **D1 is the work queue.** Uploads and email insert a `pending` document. Text (HTML, plain text, PDFs with a text layer) is read right away; photos and scanned PDFs, which need the vision model and can take longer than a request may run on, are read by a cron sweeper that runs every minute, which also retries failures with backoff and picks up anything stuck. The app sends a smaller copy of each photo for reading; the original is kept as it was. The `email()` handler only stores the raw message; parsing happens afterwards, which keeps it within CPU limits.
-- **Reading:** PDF text layers come from `toMarkdown()`; photos go to a vision model (`@cf/google/gemma-4-26b-a4b-it`) with a JSON schema. The model’s output is validated, then checked: amounts must appear in the document’s text, names are matched to people and aliases, duplicates are flagged.
+- **Reading:** PDF text layers come from `toMarkdown()`; photos go first to Clairic (`@cf/cloudflare/clairic`, Cloudflare's extraction model, which answers typed fields with a confidence for each), and anything it can't take as one receipt (an EOB, several charges, no amount) to a vision model (`@cf/google/gemma-4-26b-a4b-it`, then `@cf/meta/llama-4-scout-17b-16e-instruct`) with a JSON schema. With your own API key set, that provider reads first, and Workers AI takes over if it refuses the key. A document is tried at most 5 times, then goes to Review. The model’s output is validated, then checked: amounts must appear in the document’s text, names are matched to people and aliases, duplicates are flagged.
 - **React**, **TypeScript**, **Vite**, **Tailwind CSS**, **TanStack Query** and **React Router**, with a service worker from `vite-plugin-pwa`.
 - `src/shared` holds the money rules (reimbursable, reimbursed, not claimable, pending review), name matching, duplicate detection and the extraction schema, used by both the Worker and the app and covered by unit tests.
 - Sign-in uses one password per instance: a signed, HttpOnly session cookie, rate-limited attempts, and sessions that end when the password changes. AI assistants connect over MCP with OAuth 2.1 (`@cloudflare/workers-oauth-provider`).

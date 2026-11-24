@@ -110,6 +110,22 @@ describe('work queue', () => {
     expect((await row(cut))!.status).not.toBe('processing');
   });
 
+  it('stops after the last attempt even when every read was cut off', async () => {
+    const cut = await store(
+      fakePdf('Cut off again $45.00', receiptExtraction({ appointment_date: '2024-12-05' })),
+    );
+    await env.DB.prepare(
+      "UPDATE documents SET status = 'processing', attempts = ?, updated_at = ? WHERE id = ?",
+    )
+      .bind(MAX_ATTEMPTS, new Date(Date.now() - (STALE_MINUTES + 1) * 60_000).toISOString(), cut)
+      .run();
+    expect(await processDocument(env, cut)).toBe('skipped');
+    await sweep(env, 5);
+    const r = (await row(cut))!;
+    expect(r.status).toBe('needs_review');
+    expect(r.attempts).toBe(MAX_ATTEMPTS);
+  });
+
   it('does not reclaim a document that is still being processed', async () => {
     const busy = await store(
       fakePdf('Busy $45.00', receiptExtraction({ appointment_date: '2024-12-03' })),

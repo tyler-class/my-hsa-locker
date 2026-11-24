@@ -44,7 +44,15 @@ import {
   toProvider,
   updateStmt,
 } from '../db';
-import { getProvider, providerMisconfigured } from '../extract/providers';
+import {
+  checkKey,
+  getProvider,
+  KEY_PROVIDERS,
+  keyConfig,
+  loadKeyConfig,
+  providerMisconfigured,
+} from '../extract/providers';
+import { z } from 'zod';
 import { rememberOrigin, sendReminder } from '../notify';
 import sample from '../../../seed/sample.json';
 import { refreshDocs } from '../status';
@@ -78,7 +86,9 @@ admin.get('/state', async (c) => {
     ),
     kitState(db),
   ]);
-  const p = getProvider(c.env);
+  const saved = await loadKeyConfig(db);
+  const p = getProvider(c.env, saved);
+  const kc = keyConfig(c.env, saved);
   const state: AppState = {
     settings,
     people,
@@ -92,11 +102,13 @@ admin.get('/state', async (c) => {
       documents: Number(counts?.documents ?? 0),
     },
     ai: {
-      provider: providerMisconfigured(c.env) ? `${p.id} (LLM_API_KEY missing)` : p.id,
+      provider: !saved && providerMisconfigured(c.env) ? `${p.id} (LLM_API_KEY missing)` : p.id,
       text_model: p.textModel,
       vision_model: p.visionModel,
       third_party: p.thirdParty,
       gateway: c.env.AI_GATEWAY_ID || c.env.AI_GATEWAY_URL ? 'on' : null,
+      key_source: kc?.source ?? null,
+      key_hint: kc ? kc.key.slice(-4) : null,
     },
     kit: { updates_set_up: kit.updates_set_up, telemetry: kit.telemetry },
   };
@@ -776,11 +788,49 @@ Office visit
 Amount paid: $45.00
 Visa ending 1234`;
 
+const aiKeyInput = z.object({
+  provider: z.enum(KEY_PROVIDERS),
+  key: z.string().trim().min(8).max(500),
+  model: z.string().trim().max(100).nullish(),
+});
+
+/**
+ * Saves an API key for reading documents, after the provider says it takes it. The key is kept
+ * in D1, never returned by the API and never put in a backup.
+ */
+admin.post('/ai/key', async (c) => {
+  const input = await body(c, aiKeyInput);
+  const check = await checkKey(input.provider, input.key);
+  if (check === 'refused')
+    throw new ApiError(400, 'key_refused', 'That key was refused. Check it and try again.');
+  if (check === 'unreachable')
+    throw new ApiError(
+      503,
+      'key_unchecked',
+      'Couldn’t reach the provider to check the key. Try again in a moment.',
+    );
+  const db = c.env.DB;
+  await db.batch([
+    setSettingStmt(db, 'llm_provider', input.provider),
+    setSettingStmt(db, 'llm_api_key', input.key),
+    setSettingStmt(db, 'llm_model', input.model ?? ''),
+  ]);
+  return c.json({ ok: true });
+});
+
+/** Removes the app-saved key: reading goes back to a Worker secret if set, else Workers AI. */
+admin.post('/ai/key/remove', async (c) => {
+  await c.env.DB.prepare(
+    "DELETE FROM settings WHERE key IN ('llm_provider', 'llm_api_key', 'llm_model')",
+  ).run();
+  return c.json({ ok: true });
+});
+
 admin.post('/ai/test', async (c) => {
   const { getProvider: provider, ProviderError } = await import('../extract/providers');
   const { systemPrompt, textPrompt } = await import('../extract/prompt');
   const { extractionSchema, parseModelJson, draftsFrom } = await import('@shared/extraction');
-  const p = provider(c.env);
+  const p = provider(c.env, await loadKeyConfig(c.env.DB));
   const started = Date.now();
   try {
     const categories = (await loadCategories(c.env.DB)).map((x) => x.name);

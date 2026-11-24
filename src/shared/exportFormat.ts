@@ -107,7 +107,8 @@ export type TableName = keyof typeof TABLE_COLUMNS;
 export const TABLE_ORDER = Object.keys(TABLE_COLUMNS) as TableName[];
 
 /** Settings that never leave the instance (session salt; the inbox address is a secret too). */
-export const PRIVATE_SETTINGS = ['session_salt', 'inbox_token'];
+/** Never in a backup: secrets, and what's tied to this copy. An app-saved API key is a secret. */
+export const PRIVATE_SETTINGS = ['session_salt', 'inbox_token', 'llm_api_key'];
 
 export type Cell = string | number | null;
 export type ExportRow = Record<string, Cell>;

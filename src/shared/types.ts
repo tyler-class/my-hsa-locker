@@ -175,6 +175,10 @@ export interface AiInfo {
   /** True when documents leave Cloudflare for a third party. */
   third_party: boolean;
   gateway: string | null;
+  /** Where the API key in use comes from (saved in the app, or a Worker secret), or null. */
+  key_source: 'app' | 'secret' | null;
+  /** The key's last four characters, to tell keys apart. Never the key. */
+  key_hint: string | null;
 }
 
 /** Everything the app shell needs at once. */

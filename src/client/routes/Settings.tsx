@@ -348,7 +348,7 @@ export function Settings() {
             ? `Documents are sent to ${state.ai.provider} to be read. They contain health information. That provider’s terms apply.`
             : 'Documents are read by Workers AI inside your own Cloudflare account. They aren’t sent to any other company.'}
         </p>
-        <OwnKeyHelp />
+        <OwnKey />
         <p className="text-xs text-faint">HSA Locker makes no HIPAA compliance claims.</p>
         <div className="flex items-center gap-3">
           <PrimaryButton
@@ -550,65 +550,136 @@ export function Settings() {
   );
 }
 
-const SECRETS: [string, string][] = [
-  ['LLM_PROVIDER', 'anthropic, openai or gemini'],
-  ['LLM_API_KEY', 'your API key'],
-  ['LLM_MODEL', 'optional: a different model'],
+type KeyProvider = 'anthropic' | 'openai' | 'gemini';
+const KEY_PROVIDERS: [KeyProvider, string][] = [
+  ['anthropic', 'Anthropic'],
+  ['openai', 'OpenAI'],
+  ['gemini', 'Gemini'],
 ];
+const providerName = (id: string) => KEY_PROVIDERS.find(([v]) => v === id)?.[1] ?? id;
 
-/** How to switch to your own model key. Keys are Worker secrets, never stored in the app. */
-function OwnKeyHelp() {
+/**
+ * Your own Anthropic, OpenAI or Gemini key, added here. The provider is asked first whether it
+ * takes the key; it's kept in this copy's database and never shown again, sent to the browser
+ * or put in a backup. If the provider later refuses it, reading falls back to Workers AI.
+ */
+function OwnKey() {
+  const { data: state } = useAppState();
+  const qc = useQueryClient();
   const toast = useToast();
-  const copy = (t: string) =>
-    void navigator.clipboard
-      ?.writeText(t)
-      .then(() => toast({ text: 'Copied.' }))
-      .catch(() => {});
+  const [provider, setProvider] = useState<KeyProvider>('anthropic');
+  const [key, setKey] = useState('');
+  const [model, setModel] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  if (!state) return null;
+  const { key_source, key_hint } = state.ai;
+
+  const save = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await api.post('/ai/key', { provider, key: key.trim(), model: model.trim() || null });
+      setKey('');
+      setModel('');
+      await qc.invalidateQueries();
+      toast({ text: `${providerName(provider)} key saved. Documents are read with it now.` });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await api.post('/ai/key/remove');
+      await qc.invalidateQueries();
+      toast({ text: 'Key removed.' });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (key_source === 'app')
+    return (
+      <div className="flex flex-col gap-2 rounded-xl bg-chip px-3 py-3">
+        <p className="text-ink">
+          {providerName(state.ai.provider)} key ending in{' '}
+          <span className="font-mono">{key_hint}</span>
+        </p>
+        <p className="text-soft">
+          Used first for every document. If {providerName(state.ai.provider)} stops taking it,
+          reading falls back to Workers AI.
+        </p>
+        <div>
+          <GhostButton icon="trash" disabled={busy} onClick={() => void remove()}>
+            Remove key
+          </GhostButton>
+        </div>
+        {error && <ErrorText>{error}</ErrorText>}
+      </div>
+    );
+
   return (
     <Collapsible
       id="settings-own-key"
       className="text-soft"
       summary={<span className="text-ink">Use your own Anthropic, OpenAI or Gemini key</span>}
     >
-      <div className="flex flex-col gap-3 pt-3">
-        <p>
-          Add these as secrets in the{' '}
-          <a
-            className="text-accent"
-            href="https://dash.cloudflare.com/?to=/:account/workers/services/view/hsa-locker/production/settings"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Cloudflare dashboard
-          </a>{' '}
-          (Variables and Secrets → Add → Secret), or run the commands from a copy of the code.
-        </p>
-        <ul className="flex flex-col">
-          {SECRETS.map(([name, what]) => {
-            const cmd = `npx wrangler secret put ${name}`;
-            return (
-              <li key={name} className="flex items-center gap-3 border-b border-line py-2">
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="font-mono text-[13px] text-ink">{name}</span>
-                  <span className="text-xs text-faint">{what}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => copy(cmd)}
-                  title={cmd}
-                  className="inline-flex flex-none items-center gap-1.5 text-sm text-accent"
-                >
-                  <Icon name="copy" size={14} />
-                  Copy command
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+      <form
+        className="flex flex-col gap-3 pt-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (key.trim().length >= 8 && !busy) void save();
+        }}
+      >
+        {key_source === 'secret' && (
+          <p>A key is set as a Worker secret in Cloudflare. A key added here is used instead.</p>
+        )}
+        <SlideToggle<KeyProvider>
+          label="Provider"
+          value={provider}
+          onChange={setProvider}
+          options={KEY_PROVIDERS}
+        />
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs text-soft">API key</span>
+          <TextInput
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder={
+              provider === 'anthropic' ? 'sk-ant-…' : provider === 'openai' ? 'sk-…' : 'AIza…'
+            }
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs text-soft">Model (optional)</span>
+          <TextInput
+            autoComplete="off"
+            spellCheck={false}
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder="The provider’s default"
+          />
+        </label>
+        {error && <ErrorText>{error}</ErrorText>}
+        <div>
+          <PrimaryButton type="submit" disabled={busy || key.trim().length < 8}>
+            {busy ? 'Checking…' : 'Check and save'}
+          </PrimaryButton>
+        </div>
         <p className="text-xs text-faint">
-          Keys are never stored in the app. Remove the secrets to go back to Workers AI.
+          The key is checked with {providerName(provider)} first, then kept in this copy’s database.
+          It’s never shown again or put in a backup.
         </p>
-      </div>
+      </form>
     </Collapsible>
   );
 }
