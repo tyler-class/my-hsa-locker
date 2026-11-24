@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import type {
   AppState,
   DocumentSummary,
@@ -17,6 +18,7 @@ export const keys = {
   ledger: ['ledger'] as const,
   review: ['review'] as const,
   doc: (id: string) => ['doc', id] as const,
+  inFlight: ['in-flight'] as const,
   inbox: ['inbox'] as const,
   reimbursements: ['reimbursements'] as const,
   reimbursement: (id: string) => ['reimbursement', id] as const,
@@ -29,8 +31,12 @@ export const DATA_KEYS: QueryKey[] = [
   keys.ledger,
   keys.review,
   ['doc'],
+  keys.inFlight,
   keys.reimbursements,
 ];
+
+/** How often the app checks on documents being read. */
+const READING_POLL_MS = 3000;
 
 /** App state. Polls every few seconds only while documents are being read. */
 export function useAppState() {
@@ -38,8 +44,51 @@ export function useAppState() {
     queryKey: keys.state,
     queryFn: () => api.get<AppState>('/state'),
     staleTime: 10_000,
-    refetchInterval: (q) => (q.state.data?.counts.in_flight ? 3000 : false),
+    refetchInterval: (q) => (q.state.data?.counts.in_flight ? READING_POLL_MS : false),
   });
+}
+
+/**
+ * The documents still being read (pending, processing, or failed with a retry to come), newest
+ * first: the Ledger shows each as a placeholder row. Polls while there are any.
+ */
+export function useInFlightDocs() {
+  const { data: state } = useAppState();
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: keys.inFlight,
+    queryFn: async () => {
+      const before = qc.getQueryData<DocumentSummary[]>(keys.inFlight) ?? [];
+      const docs = (
+        await api.get<{ documents: DocumentSummary[] }>('/documents?status=in_flight&limit=50')
+      ).documents;
+      // One finished: its entries replace its placeholder straight away.
+      const now = new Set(docs.map((d) => d.id));
+      if (before.some((d) => !now.has(d.id)))
+        for (const k of DATA_KEYS)
+          if (k !== keys.inFlight) void qc.invalidateQueries({ queryKey: k });
+      return docs;
+    },
+    refetchInterval: (q) =>
+      (q.state.data?.length ?? 0) > 0 || (state?.counts.in_flight ?? 0) > 0
+        ? READING_POLL_MS
+        : false,
+  });
+}
+
+/**
+ * When a document finishes being read (the in-flight count drops), refreshes everything else so
+ * its entries show up wherever you are, with no reload. Mounted once, in Layout.
+ */
+export function useRefreshWhenRead(inFlight: number | undefined) {
+  const qc = useQueryClient();
+  const last = useRef(inFlight);
+  useEffect(() => {
+    const before = last.current;
+    last.current = inFlight;
+    if (before === undefined || inFlight === undefined || inFlight >= before) return;
+    for (const k of DATA_KEYS) if (k !== keys.state) void qc.invalidateQueries({ queryKey: k });
+  }, [inFlight, qc]);
 }
 
 export interface SummaryData {

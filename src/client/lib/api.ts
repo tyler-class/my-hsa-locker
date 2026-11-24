@@ -102,3 +102,17 @@ export function uploadFile(
 export function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : 'Something went wrong.';
 }
+
+/**
+ * Sends the smaller copy of a photo that the model reads instead of the full-size original
+ * (see lib/readingCopy.ts). Best effort: without it the original is read.
+ */
+export async function uploadReadingCopy(documentId: string, copy: Blob): Promise<void> {
+  const res = await fetch(`/api/documents/${encodeURIComponent(documentId)}/reading-copy`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'image/jpeg' },
+    body: copy,
+  });
+  if (!res.ok) throw new ApiError(res.status, 'error', `Upload failed (${res.status}).`);
+}

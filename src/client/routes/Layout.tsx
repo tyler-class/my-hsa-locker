@@ -6,7 +6,7 @@ import { GlassTabBar, type GlassTab } from '../components/GlassTabBar';
 import { Icon } from '../components/Icon';
 import { cx } from '../components/ui';
 import { useNotifications } from '../lib/notifications';
-import { useAppState } from '../lib/queries';
+import { useAppState, useRefreshWhenRead } from '../lib/queries';
 import { useTabSwipe } from '../lib/tabSwipe';
 
 const TABS: GlassTab[] = [
@@ -47,6 +47,23 @@ function Badge({ n, className }: { n: number; className?: string }) {
   );
 }
 
+/** "Reading 2 documents…": goes to the Ledger, where each one shows until its entries arrive. */
+function ReadingLink({ count, className }: { count: number; className?: string }) {
+  return (
+    <Link
+      to="/ledger"
+      role="status"
+      className={cx('flex items-center gap-2 text-xs text-soft hover:text-ink', className)}
+    >
+      <span className="h-2 w-2 flex-none animate-pulse rounded-full bg-accent motion-reduce:animate-none" />
+      <span className="flex-1">
+        Reading {count} document{count === 1 ? '' : 's'}…
+      </span>
+      <Icon name="chevRight" size={12} className="text-faint" />
+    </Link>
+  );
+}
+
 export function Layout() {
   const { pathname } = useLocation();
   // Every change of screen, Back included, opens at the top, never at the old scroll position.
@@ -60,6 +77,7 @@ export function Layout() {
   const review = state.data?.counts.review_documents ?? 0;
   const inFlight = state.data?.counts.in_flight ?? 0;
   useNotifications(state.data?.counts.review_documents);
+  useRefreshWhenRead(state.data?.counts.in_flight);
   return (
     // min-h-lvh: on a page too short to scroll, iOS home-screen apps size the viewport without the
     // safe areas and the fixed tab bar floats above the bottom. Filling the large viewport avoids it.
@@ -97,10 +115,10 @@ export function Layout() {
           ))}
         </nav>
         {inFlight > 0 && (
-          <p className="mt-4 flex items-center gap-2 px-3.5 text-xs text-soft" role="status">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-            Reading {inFlight} document{inFlight === 1 ? '' : 's'}…
-          </p>
+          <ReadingLink
+            count={inFlight}
+            className="mt-4 rounded-full px-3.5 py-2 hover:bg-line/60"
+          />
         )}
         <div className="mt-auto flex flex-col gap-1">
           <AboutButton variant="nav" />
@@ -117,15 +135,7 @@ export function Layout() {
       </aside>
 
       <main className="mx-auto w-full max-w-2xl pb-[calc(var(--tabbar-clear)+16px)] md:max-w-4xl md:px-6 md:pt-4 md:pb-10">
-        {inFlight > 0 && (
-          <p
-            className="mx-5 mt-1 flex items-center gap-2 text-xs text-soft md:hidden"
-            role="status"
-          >
-            <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-            Reading {inFlight} document{inFlight === 1 ? '' : 's'}…
-          </p>
-        )}
+        {inFlight > 0 && <ReadingLink count={inFlight} className="mx-5 mt-1 py-1 md:hidden" />}
         <Outlet />
       </main>
 

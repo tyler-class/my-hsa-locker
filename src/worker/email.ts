@@ -126,7 +126,7 @@ export async function handleEmail(
     ctx.waitUntil(notifyWhenIdle(db));
     throw e;
   }
-  ctx.waitUntil(processInboxMessage(env, id).catch(() => {}));
+  ctx.waitUntil(processInboxMessage(env, id, { quick: true }).catch(() => {}));
 }
 
 async function parseNested(content: ArrayBuffer | Uint8Array | string): Promise<Email | null> {
@@ -182,7 +182,15 @@ async function collectParts(email: Email, depth = 0): Promise<{ parts: Part[]; b
 }
 
 /** Parses a stored message into documents. Idempotent: only 'received' messages are taken. */
-export async function processInboxMessage(env: Cloudflare.Env, logId: string): Promise<void> {
+/**
+ * Parses one message into documents and reads them. `quick` (from the email handler, which has
+ * about 30 seconds) reads only text there and leaves photos and scans for the sweeper.
+ */
+export async function processInboxMessage(
+  env: Cloudflare.Env,
+  logId: string,
+  opts: { quick?: boolean } = {},
+): Promise<void> {
   const db = env.DB;
   const claimed = await first<{
     id: string;
@@ -322,7 +330,7 @@ export async function processInboxMessage(env: Cloudflare.Env, logId: string): P
       parts.length,
       created.length,
     );
-    for (const id of created) await processDocument(env, id);
+    for (const id of created) await processDocument(env, id, opts);
   } catch (e) {
     const code = e instanceof Error ? e.name : 'error';
     console.warn(`inbox ${logId}: parse attempt ${claimed.attempts} failed (${code})`);

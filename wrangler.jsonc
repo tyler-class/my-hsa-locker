@@ -38,7 +38,9 @@
   // Sends the optional daily review reminder. Only to addresses verified in Email Routing
   // (Destination addresses), which is free on every plan and needs no extra DNS.
   "send_email": [{ "name": "EMAIL" }],
-  // Picks up documents waiting to be read, stuck, or due for a retry; then sends push
-  // notifications still due (the sent log keeps each one to once, however often this runs).
-  "triggers": { "crons": ["*/10 * * * *"] },
+  // Every minute: reads documents waiting to be read (photos and scans are read only here, since
+  // a request has about 30 seconds), stuck, or due for a retry. Every tenth minute it also sends
+  // push notifications still due (the sent log keeps each one to once) and the daily reminder.
+  // 1,440 runs a day, each a couple of small indexed queries when nothing is waiting.
+  "triggers": { "crons": ["* * * * *"] },
 }

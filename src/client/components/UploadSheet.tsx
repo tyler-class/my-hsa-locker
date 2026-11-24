@@ -3,9 +3,10 @@ import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { ACCEPTED_MIME, MAX_UPLOAD_BYTES } from '@shared/lookups';
 import type { DocumentSummary } from '@shared/types';
-import { api, errorMessage, uploadFile } from '../lib/api';
+import { api, errorMessage, uploadFile, uploadReadingCopy } from '../lib/api';
 import { bytes } from '../lib/format';
 import { useRefreshData } from '../lib/queries';
+import { isPhoto, makeReadingCopy } from '../lib/readingCopy';
 import { Icon } from './Icon';
 import { cx, GhostButton, PrimaryButton, Sheet } from './ui';
 
@@ -29,6 +30,9 @@ const LABEL: Record<Item['state'], string> = {
 };
 
 /** Multi-file upload: drag and drop on desktop, camera or photos on phones. */
+/** A document still being read: waiting, being read, or failed with a retry to come. */
+const IN_FLIGHT = ['pending', 'processing', 'failed'] as const;
+
 export function UploadSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [items, setItems] = useState<Item[]>([]);
   const [drag, setDrag] = useState(false);
@@ -68,10 +72,18 @@ export function UploadSheet({ open, onClose }: { open: boolean; onClose: () => v
         continue;
       }
       update(it.key, { state: 'uploading' });
+      // A photo's smaller reading copy is made while the original uploads, then sent after it.
+      const copy = isPhoto(it.file) ? makeReadingCopy(it.file) : Promise.resolve(null);
       try {
         const r = await uploadFile(it.file, (p) => update(it.key, { progress: p }));
+        // The same photo again while the first is still being read (say it got stuck): send its
+        // reading copy too, so the next try reads the small copy.
+        const stillReading =
+          r.duplicate && !!r.document && IN_FLIGHT.includes(r.document.status as never);
+        const blob = !r.document || (r.duplicate && !stillReading) ? null : await copy;
+        if (blob) await uploadReadingCopy(r.document.id, blob).catch(() => {});
         update(it.key, {
-          state: r.duplicate ? 'duplicate' : 'reading',
+          state: r.duplicate && !stillReading ? 'duplicate' : 'reading',
           docId: r.document?.id,
           progress: 1,
         });

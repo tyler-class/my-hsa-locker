@@ -23,6 +23,9 @@ export type Row = Record<string, unknown>;
 export const REVIEW_DOC_WHERE = `(d.status = 'needs_review'
   OR (d.status != 'discarded' AND EXISTS (SELECT 1 FROM entries re WHERE re.document_id = d.id AND re.review_reasons_json != '[]')))`;
 
+/** Minutes after which a document left in 'processing' counts as abandoned (see the pipeline). */
+export const STALE_MINUTES = 3;
+
 export const nowIso = () => new Date().toISOString();
 export const newId = () => crypto.randomUUID();
 
@@ -175,7 +178,7 @@ export function toLedgerEntry(r: Row): LedgerEntry {
 /** Never includes extraction_json. */
 export const DOC_COLUMNS = `d.id, d.kind, d.status, d.source, d.source_meta_json, d.filename, d.mime,
   d.size_bytes, d.eml_key, d.text_layer_chars, d.extraction_model, d.extraction_provider,
-  d.review_reasons_json, d.error, d.attempts, d.received_at, d.processed_at,
+  d.review_reasons_json, d.error, d.attempts, d.next_attempt_at, d.received_at, d.processed_at,
   (SELECT COUNT(*) FROM entries e WHERE e.document_id = d.id) AS entry_count`;
 
 export function toDocument(r: Row): DocumentSummary {
@@ -195,6 +198,7 @@ export function toDocument(r: Row): DocumentSummary {
     review_reasons: arr(r.review_reasons_json),
     error: s(r.error),
     attempts: Number(r.attempts ?? 0),
+    next_attempt_at: s(r.next_attempt_at),
     received_at: String(r.received_at),
     processed_at: s(r.processed_at),
     entry_count: Number(r.entry_count ?? 0),

@@ -17,6 +17,7 @@ import type { DocKind, Entry, Person } from '@shared/types';
 import {
   all,
   first,
+  STALE_MINUTES,
   insertStmt,
   loadCategories,
   loadPeople,
@@ -38,9 +39,35 @@ import { htmlToText, MIN_TEXT_CHARS, pdfText } from './text';
 import { notifyWhenIdle } from '../notifications';
 
 export const MAX_ATTEMPTS = 5;
-export const STALE_MINUTES = 10;
+/**
+ * A claim older than this is abandoned (the isolate was cut off mid-read) and is taken again.
+ * A live read refreshes its claim before every model call, and each call gives up after
+ * MODEL_TIMEOUT_MS, so a claim this old can't belong to a read that's still going.
+ */
+export { STALE_MINUTES } from '../db';
+/** Longest wait for one model reply before the attempt counts as failed (and is retried). */
+export const MODEL_TIMEOUT_MS = 100_000;
+/**
+ * Inside a request, where waitUntil runs out about 30 seconds after the response, the whole read
+ * gets this long; past it the document goes back to the queue for the sweeper.
+ */
+export const QUICK_BUDGET_MS = 20_000;
 /** Largest file sent to a model as an image/PDF. */
 export const MAX_MODEL_FILE_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Where a smaller copy of a photo, made by the app for reading, is kept. The original stays as it
+ * was uploaded; the copy is only what's sent to the model (faster, and fewer tokens).
+ */
+export const readingCopyKey = (documentId: string) => `reading/${documentId}.jpg`;
+
+/**
+ * Documents read straight away inside a request (upload, reprocess, an email arriving). Those
+ * get about 30 seconds after the response, so only text is read there: HTML, plain text and
+ * PDFs with a text layer. Photos and scanned PDFs need the vision model, which can take longer,
+ * so they wait for the sweeper (every minute), which has as long as it needs.
+ */
+const QUICK_MIME_SQL = "(mime LIKE 'text/%' OR mime = 'application/pdf')";
 
 /** Minutes to wait before attempt n+1 (2, 4, 8, 16). */
 export function backoffMinutes(attempts: number): number {
@@ -60,7 +87,7 @@ interface DocRow {
  * Takes the document for processing if it's due (pending, failed with attempts left, or stuck in
  * processing). Returns null if someone else has it or it's done.
  */
-async function claim(db: D1Database, id: string): Promise<DocRow | null> {
+async function claim(db: D1Database, id: string, quick: boolean): Promise<DocRow | null> {
   const now = nowIso();
   const stale = new Date(Date.now() - STALE_MINUTES * 60_000).toISOString();
   return first<DocRow>(
@@ -70,7 +97,7 @@ async function claim(db: D1Database, id: string): Promise<DocRow | null> {
        (status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= ?))
        OR (status = 'failed' AND attempts < ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?))
        OR (status = 'processing' AND updated_at < ?)
-     )
+     )${quick ? ` AND ${QUICK_MIME_SQL}` : ''}
      RETURNING id, file_key, filename, mime, attempts, status`,
     now,
     id,
@@ -82,16 +109,21 @@ async function claim(db: D1Database, id: string): Promise<DocRow | null> {
 }
 
 /** Ids due for processing, oldest first. */
-export async function dueDocuments(db: D1Database, limit: number): Promise<string[]> {
+export async function dueDocuments(
+  db: D1Database,
+  limit: number,
+  quick = false,
+): Promise<string[]> {
   const now = nowIso();
   const stale = new Date(Date.now() - STALE_MINUTES * 60_000).toISOString();
   return (
     await all<{ id: string }>(
       db,
-      `SELECT id FROM documents WHERE
+      `SELECT id FROM documents WHERE (
          (status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= ?))
          OR (status = 'failed' AND attempts < ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?))
          OR (status = 'processing' AND updated_at < ?)
+       )${quick ? ` AND ${QUICK_MIME_SQL}` : ''}
        ORDER BY received_at LIMIT ?`,
       now,
       MAX_ATTEMPTS,
@@ -112,8 +144,34 @@ type Outcome =
       textChars: number | null;
     };
 
-async function ask(provider: LlmProvider, call: ModelCall) {
-  const first = await provider.complete(call);
+/** Thrown inside a quick read when the document needs the vision model: the sweeper takes it. */
+class LeaveForSweeper extends Error {}
+
+/** One model call, given up after MODEL_TIMEOUT_MS (the reply may still come; it's ignored). */
+async function complete(provider: LlmProvider, call: ModelCall, timeoutMs: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new ProviderError('timeout', true)), timeoutMs);
+  });
+  try {
+    return await Promise.race([provider.complete(call), timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+interface ReadContext {
+  /** Refreshes the claim so a long read isn't taken for an abandoned one. */
+  beat: () => Promise<void>;
+  /** Only read text here: a document that needs the vision model throws LeaveForSweeper. */
+  quick: boolean;
+  /** How long the next model call may take. */
+  timeLeft: () => number;
+}
+
+async function ask(provider: LlmProvider, call: ModelCall, ctx: ReadContext) {
+  await ctx.beat();
+  const first = await complete(provider, call, ctx.timeLeft());
   try {
     return {
       json: extractionSchema.parse(parseModelJson(first.text)),
@@ -122,10 +180,12 @@ async function ask(provider: LlmProvider, call: ModelCall) {
     };
   } catch {
     // One repair-and-retry, as the brief asks for models without strict structured output.
-    const second = await provider.complete({
-      ...call,
-      repair: { previous: first.text.slice(0, 8000), ask: REPAIR_PROMPT },
-    });
+    await ctx.beat();
+    const second = await complete(
+      provider,
+      { ...call, repair: { previous: first.text.slice(0, 8000), ask: REPAIR_PROMPT } },
+      ctx.timeLeft(),
+    );
     return {
       json: extractionSchema.parse(parseModelJson(second.text)),
       raw: second.text,
@@ -139,6 +199,7 @@ async function readDocument(
   doc: DocRow,
   provider: LlmProvider,
   categories: string[],
+  ctx: ReadContext,
 ): Promise<Outcome & { extraction?: ReturnType<typeof extractionSchema.parse> }> {
   const obj = await env.FILES.get(doc.file_key);
   if (!obj) return { kind: 'review', reasons: ['extraction_failed'], textChars: null };
@@ -155,10 +216,11 @@ async function readDocument(
   const textChars = text === null ? null : text.length;
 
   if (text !== null && (text.length >= MIN_TEXT_CHARS || doc.mime.startsWith('text/'))) {
-    const r = await ask(provider, {
-      system,
-      user: textPrompt(text.slice(0, MAX_TEXT_CHARS), doc.filename),
-    });
+    const r = await ask(
+      provider,
+      { system, user: textPrompt(text.slice(0, MAX_TEXT_CHARS), doc.filename) },
+      ctx,
+    );
     return {
       kind: 'extracted',
       raw: r.raw,
@@ -170,17 +232,28 @@ async function readDocument(
   }
 
   // Images, and PDFs with no usable text layer: send the file to a vision-capable model.
-  if (!provider.accepts(doc.mime)) {
+  if (ctx.quick) throw new LeaveForSweeper();
+  // A photo the app made a smaller reading copy of is read from that copy (always a JPEG).
+  let file = { bytes, mime: doc.mime };
+  if (doc.mime.startsWith('image/')) {
+    const copy = await env.FILES.get(readingCopyKey(doc.id));
+    if (copy) file = { bytes: new Uint8Array(await copy.arrayBuffer()), mime: 'image/jpeg' };
+  }
+  if (!provider.accepts(file.mime)) {
     const reason = doc.mime === 'application/pdf' ? 'scanned_pdf_unsupported' : 'unsupported_file';
     return { kind: 'review', reasons: [reason], textChars };
   }
-  if (bytes.byteLength > MAX_MODEL_FILE_BYTES)
+  if (file.bytes.byteLength > MAX_MODEL_FILE_BYTES)
     return { kind: 'review', reasons: ['unsupported_file'], textChars };
-  const r = await ask(provider, {
-    system,
-    user: filePrompt(doc.filename),
-    file: { base64: toBase64(bytes), mime: doc.mime },
-  });
+  const r = await ask(
+    provider,
+    {
+      system,
+      user: filePrompt(doc.filename),
+      file: { base64: toBase64(file.bytes), mime: file.mime },
+    },
+    ctx,
+  );
   return {
     kind: 'extracted',
     raw: r.raw,
@@ -364,28 +437,61 @@ function docReasons(kind: DocKind, entryCount: number, mime: string): string[] {
   return [];
 }
 
-export type ProcessResult = 'processed' | 'needs_review' | 'failed' | 'skipped';
+/** 'deferred': a quick read found the document needs the vision model and left it for the sweeper. */
+export type ProcessResult = 'processed' | 'needs_review' | 'failed' | 'skipped' | 'deferred';
+
+export interface ProcessOptions {
+  /**
+   * Inside a request (upload, reprocess, an email arriving): read only what's quick to read and
+   * leave photos and scanned PDFs, still pending and due, for the sweeper.
+   */
+  quick?: boolean;
+  /** Tests: a shorter time limit (per model call, or for a whole quick read). */
+  timeoutMs?: number;
+}
 
 /**
  * Processes one document if it's due. Safe to call twice: the second call finds nothing to claim.
  * Afterwards, push notifications go out for what's now in Review (once nothing else is being read).
  */
-export async function processDocument(env: Cloudflare.Env, id: string): Promise<ProcessResult> {
-  const result = await readAndStore(env, id);
-  if (result !== 'skipped') await notifyWhenIdle(env.DB);
+export async function processDocument(
+  env: Cloudflare.Env,
+  id: string,
+  opts: ProcessOptions = {},
+): Promise<ProcessResult> {
+  const result = await readAndStore(env, id, opts);
+  if (result !== 'skipped' && result !== 'deferred') await notifyWhenIdle(env.DB);
   return result;
 }
 
-async function readAndStore(env: Cloudflare.Env, id: string): Promise<ProcessResult> {
+async function readAndStore(
+  env: Cloudflare.Env,
+  id: string,
+  opts: ProcessOptions,
+): Promise<ProcessResult> {
   const db = env.DB;
-  const doc = await claim(db, id);
+  const quick = !!opts.quick;
+  const doc = await claim(db, id, quick);
   if (!doc) return 'skipped';
   const provider = getProvider(env);
   const now = nowIso();
+  const started = Date.now();
+  const ctx: ReadContext = {
+    quick,
+    timeLeft: quick
+      ? () => Math.max(1, started + (opts.timeoutMs ?? QUICK_BUDGET_MS) - Date.now())
+      : () => opts.timeoutMs ?? MODEL_TIMEOUT_MS,
+    beat: async () => {
+      await db
+        .prepare("UPDATE documents SET updated_at = ? WHERE id = ? AND status = 'processing'")
+        .bind(nowIso(), id)
+        .run();
+    },
+  };
 
   try {
     const categories = (await loadCategories(db)).map((c) => c.name);
-    const out = await readDocument(env, doc, provider, categories);
+    const out = await readDocument(env, doc, provider, categories, ctx);
 
     if (out.kind === 'review') {
       await db.batch([
@@ -438,6 +544,18 @@ async function readAndStore(env: Cloudflare.Env, id: string): Promise<ProcessRes
     ]);
     return status;
   } catch (e) {
+    const slow = quick && e instanceof ProviderError && e.message === 'timeout';
+    if (e instanceof LeaveForSweeper || slow) {
+      // Not an attempt: hand it back, due now, for the sweeper's next run (a minute at most).
+      await db
+        .prepare(
+          `UPDATE documents SET status = 'pending', attempts = MAX(0, attempts - 1),
+             next_attempt_at = NULL, updated_at = ? WHERE id = ? AND status = 'processing'`,
+        )
+        .bind(nowIso(), id)
+        .run();
+      return 'deferred';
+    }
     // Log the error class only, never contents.
     const code =
       e instanceof ProviderError ? e.message : e instanceof Error ? e.name || 'error' : 'error';
@@ -465,12 +583,20 @@ async function readAndStore(env: Cloudflare.Env, id: string): Promise<ProcessRes
   }
 }
 
-/** Processes due documents one at a time, within a budget. */
-export async function sweep(env: Cloudflare.Env, limit = 5): Promise<number> {
-  const ids = await dueDocuments(env.DB, limit);
+/**
+ * Processes due documents one at a time, within a budget. `quick` (inside a request) reads only
+ * text documents and leaves the rest for the cron sweeper.
+ */
+export async function sweep(
+  env: Cloudflare.Env,
+  limit = 5,
+  opts: ProcessOptions = {},
+): Promise<number> {
+  const ids = await dueDocuments(env.DB, limit, opts.quick);
   let done = 0;
   for (const id of ids) {
-    if ((await processDocument(env, id)) !== 'skipped') done++;
+    const r = await processDocument(env, id, opts);
+    if (r !== 'skipped' && r !== 'deferred') done++;
   }
   return done;
 }

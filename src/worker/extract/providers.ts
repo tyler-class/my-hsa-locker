@@ -307,6 +307,8 @@ function fake(): LlmProvider {
     async complete(call) {
       const hay = call.file ? bytesToBinary(fromBase64(call.file.base64)) : call.user;
       if (hay.includes('FAKE_FAIL')) throw new ProviderError('http_503', true);
+      // A model that never answers (for the pipeline's time limits).
+      if (hay.includes('FAKE_HANG')) return new Promise<never>(() => {});
       const i = hay.indexOf('FAKE_EXTRACTION:');
       if (i < 0) return { text: '{"document_type":"Unknown","line_items":[]}', model: 'fake' };
       const rest = hay.slice(i + 'FAKE_EXTRACTION:'.length);

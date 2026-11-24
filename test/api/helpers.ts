@@ -111,3 +111,14 @@ export function receiptExtraction(p: Partial<Record<string, unknown>> = {}) {
     ],
   };
 }
+
+/** A synthetic "photo": JPEG magic bytes, then the fake model reply (see the fake provider). */
+export function fakeJpeg(extraction: unknown, extra = ''): Uint8Array {
+  const body = new TextEncoder().encode(
+    `\nSynthetic photo ${Math.random()} ${extra}\nFAKE_EXTRACTION:${JSON.stringify(extraction)}\n`,
+  );
+  const out = new Uint8Array(3 + body.length);
+  out.set([0xff, 0xd8, 0xff], 0);
+  out.set(body, 3);
+  return out;
+}

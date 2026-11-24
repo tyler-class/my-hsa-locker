@@ -279,7 +279,7 @@ export function Segmented<T extends string>({
     <div
       role="group"
       aria-label={label}
-      className="flex min-w-0 gap-0.5 rounded-full bg-chip p-[3px]"
+      className="flex min-w-0 gap-0.5 rounded-full bg-seg-track p-[3px] shadow-[inset_0_0_0_1px_var(--seg-track-edge)]"
     >
       {options.map(([v, text]) => (
         <button
@@ -291,7 +291,7 @@ export function Segmented<T extends string>({
             // The focus ring sits inside the button: the track would clip one outside.
             'flex-1 rounded-full px-0.5 py-1.5 text-[13px] whitespace-nowrap focus-visible:-outline-offset-2',
             value === v
-              ? 'bg-seg font-medium text-ink shadow-[0_1px_2px_rgba(0,0,0,.08)]'
+              ? 'bg-seg font-medium text-ink shadow-[0_1px_2px_rgba(0,0,0,.08),inset_0_0_0_1px_var(--seg-edge)]'
               : 'text-soft',
           )}
         >
@@ -871,7 +871,7 @@ export function SlideToggle<T extends string>(props: SlideToggleProps<T>) {
       role="tablist"
       aria-label={label}
       className={cx(
-        'no-scrollbar relative grid overflow-x-auto rounded-full bg-chip p-1',
+        'no-scrollbar relative grid overflow-x-auto rounded-full bg-seg-track p-1 shadow-[inset_0_0_0_1px_var(--seg-track-edge)]',
         className,
       )}
       style={{ gridTemplateColumns: `repeat(${n}, minmax(max-content, 1fr))` }}
@@ -879,7 +879,7 @@ export function SlideToggle<T extends string>(props: SlideToggleProps<T>) {
       {thumb && (
         <span
           aria-hidden="true"
-          className="absolute inset-y-1 left-0 rounded-full bg-surface shadow-[0_1px_3px_rgba(0,0,0,.12)] transition-[transform,width] duration-200 ease-out"
+          className="absolute inset-y-1 left-0 rounded-full bg-seg shadow-[0_1px_3px_rgba(0,0,0,.12),inset_0_0_0_1px_var(--seg-edge)] transition-[transform,width] duration-200 ease-out motion-reduce:transition-none"
           style={{ width: thumb.width, transform: `translateX(${thumb.left}px)` }}
         />
       )}

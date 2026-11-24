@@ -76,6 +76,8 @@ export interface DocumentSummary {
   review_reasons: string[];
   error: string | null;
   attempts: number;
+  /** When a failed read is tried again (null: as soon as the sweeper runs). */
+  next_attempt_at: string | null;
   received_at: string;
   processed_at: string | null;
   entry_count: number;
@@ -179,6 +181,7 @@ export interface AppState {
   counts: {
     review_documents: number;
     review_entries: number;
+    /** Still being read: pending, processing, or failed with a retry to come (the Ledger shows each). */
     in_flight: number;
     failed: number;
     documents: number;

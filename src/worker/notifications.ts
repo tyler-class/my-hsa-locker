@@ -28,7 +28,7 @@ import {
   type ReviewDoc,
 } from '@shared/logic';
 import type { DocKind, LedgerEntry } from '@shared/types';
-import { all, first, getSetting, loadSettings, REVIEW_DOC_WHERE } from './db';
+import { all, first, getSetting, loadSettings, REVIEW_DOC_WHERE, STALE_MINUTES } from './db';
 import {
   pushRoutes,
   runPushJob,
@@ -259,7 +259,7 @@ export function hsaPush(db: D1Database): Pick<PushJobOptions, 'build' | 'badge'>
 }
 
 /**
- * Sends what's due: from the cron (every 10 minutes; it also lets notifications held overnight
+ * Sends what's due: from the cron (every tenth minute; it also lets notifications held overnight
  * out at 8 a.m.) and right after documents are read. Between 9 p.m. and 8 a.m. on a device,
  * nothing goes out; what's waiting then goes as one notification at 8. Never throws.
  */
@@ -282,8 +282,8 @@ export function runNotifications(db: D1Database, o: Partial<PushJobOptions> = {}
 export async function notifyWhenIdle(db: D1Database, o: Partial<PushJobOptions> = {}) {
   try {
     const now = new Date().toISOString();
-    // 10 minutes: the pipeline's STALE_MINUTES (a claim older than that is abandoned).
-    const stale = new Date(Date.now() - 10 * 60_000).toISOString();
+    // A claim older than STALE_MINUTES is abandoned, so it doesn't hold notifications back.
+    const stale = new Date(Date.now() - STALE_MINUTES * 60_000).toISOString();
     const busy = await first<{ n: number }>(
       db,
       `SELECT COUNT(*) AS n FROM documents WHERE

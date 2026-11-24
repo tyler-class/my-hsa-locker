@@ -174,7 +174,8 @@ export const guard: MiddlewareHandler<Env> = async (c, next) => {
       c.req.method === 'POST' &&
       (path === '/api/documents' ||
         path === '/api/legacy-import/document' ||
-        path.startsWith('/api/restore-file/'));
+        path.startsWith('/api/restore-file/') ||
+        /^\/api\/documents\/[\w-]+\/reading-copy$/.test(path));
     if (upload) {
       if (!origin) return c.json({ error: 'forbidden', message: 'Missing Origin.' }, 403);
     } else if (!ct.startsWith('application/json')) {

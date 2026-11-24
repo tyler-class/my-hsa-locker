@@ -13,13 +13,14 @@ import type { LedgerEntry } from '@shared/types';
 import { excludedText, namesFor, ReasonChips, StatusChip } from '../components/bits';
 import { EntrySheet } from '../components/EntrySheet';
 import { LedgerFilters } from '../components/LedgerFilters';
+import { ReadingRows } from '../components/ReadingRows';
 import { Icon } from '../components/Icon';
 import { ReimburseSheet } from '../components/ReimburseSheet';
 import { UploadSheet } from '../components/UploadSheet';
 import { ActionList, cx, Empty, PageHeader, PrimaryButton, Sheet } from '../components/ui';
 import { api } from '../lib/api';
 import { money, plural, shortDate } from '../lib/format';
-import { useAppState, useLedger, useReimbursements } from '../lib/queries';
+import { useAppState, useInFlightDocs, useLedger, useReimbursements } from '../lib/queries';
 import { useSaveFile } from '../lib/files';
 import { load, save } from '../lib/storage';
 import { restoreExclusions, useSave, useUndo } from '../lib/useSave';
@@ -39,6 +40,7 @@ export function Ledger() {
   }, [params, setParams]);
   const { data: state } = useAppState();
   const ledger = useLedger();
+  const reading = (useInFlightDocs().data?.length ?? 0) > 0;
   const reimbursements = useReimbursements();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<LedgerEntry | null>(null);
@@ -125,10 +127,16 @@ export function Ledger() {
         counts={counts}
       />
 
+      {/* Documents still being read sit on top, outside the filters, selection and totals. */}
+      <ReadingRows />
+
       {ledger.isPending ? null : rows.length === 0 ? (
-        <Empty title="Nothing matches" icon="search">
-          Try fewer filters, or upload a receipt.
-        </Empty>
+        // With nothing filtered and something being read, the placeholders say it all.
+        reading && !query ? null : (
+          <Empty title="Nothing matches" icon="search">
+            Try fewer filters, or upload a receipt.
+          </Empty>
+        )
       ) : (
         <ul className="px-5 pt-2" aria-label="Entries">
           <li className="border-b border-line">

@@ -73,6 +73,11 @@ function oauthCapable(url: URL): boolean {
   return url.protocol === 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
 }
 
+/** True on minutes :00, :10, … :50 (UTC), when the cron's less urgent work runs. */
+export function isTenthMinute(scheduledTime: number): boolean {
+  return new Date(scheduledTime).getUTCMinutes() % 10 === 0;
+}
+
 /** The anonymous daily check-in's settings (counts only; see src/worker/kit/telemetry.ts). */
 const usage = (env: Cloudflare.Env): CheckInOptions => ({
   app: 'hsa-locker',
@@ -108,20 +113,28 @@ export default {
     await handleEmail(message as unknown as IncomingMessage, env, ctx);
   },
 
-  /** The work queue: unparsed mail first, then documents due for (re)processing; then push. */
-  async scheduled(_event: ScheduledController, env: Cloudflare.Env, ctx: ExecutionContext) {
+  /**
+   * Runs every minute. The work queue each time: unparsed mail first, then documents due for
+   * (re)reading (photos and scans wait for this; a request only reads text). The rest (check-in,
+   * the daily reminder, push) every tenth minute, as when the cron ran every 10 minutes.
+   */
+  async scheduled(event: ScheduledController, env: Cloudflare.Env, ctx: ExecutionContext) {
+    const tenth = isTenthMinute(event.scheduledTime);
     // The anonymous check-in goes out at most once a day, and not at all if it's turned off.
-    ctx.waitUntil(checkIn(env.DB, usage(env)));
+    if (tenth) ctx.waitUntil(checkIn(env.DB, usage(env)));
     try {
       for (const id of await dueInboxMessages(env.DB, 5)) await processInboxMessage(env, id);
       const n = await sweep(env, 5);
       if (n) console.log(`sweeper: ${n} document(s) processed`);
-      const r = await sendReminder(env);
-      if (r.sent) console.log('reminder: sent');
+      if (tenth) {
+        const r = await sendReminder(env);
+        if (r.sent) console.log('reminder: sent');
+      }
     } catch (e) {
       console.warn(`sweeper failed: ${e instanceof Error ? e.name : 'error'}`);
     }
     // Push: anything still unsent (documents held overnight go out on the first run after 8 a.m.).
-    ctx.waitUntil(runNotifications(env.DB));
+    // Reading a document already sends what it caused, straight away.
+    if (tenth) ctx.waitUntil(runNotifications(env.DB));
   },
 } satisfies ExportedHandler<Cloudflare.Env>;

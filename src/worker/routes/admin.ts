@@ -72,7 +72,7 @@ admin.get('/state', async (c) => {
         (SELECT COUNT(*) FROM documents d WHERE ${REVIEW_DOC_WHERE}) AS review_documents,
         (SELECT COUNT(*) FROM entries e JOIN documents d ON d.id = e.document_id
            WHERE d.status != 'discarded' AND e.review_reasons_json != '[]') AS review_entries,
-        (SELECT COUNT(*) FROM documents WHERE status IN ('pending', 'processing')) AS in_flight,
+        (SELECT COUNT(*) FROM documents WHERE status IN ('pending', 'processing', 'failed')) AS in_flight,
         (SELECT COUNT(*) FROM documents WHERE status = 'failed') AS failed,
         (SELECT COUNT(*) FROM documents WHERE status != 'discarded') AS documents`,
     ),

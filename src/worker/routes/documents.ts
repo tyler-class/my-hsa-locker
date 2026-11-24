@@ -15,7 +15,7 @@ import {
   toEntry,
   type Row,
 } from '../db';
-import { MAX_ATTEMPTS, processDocument, sweep } from '../extract/pipeline';
+import { MAX_ATTEMPTS, processDocument, readingCopyKey, sweep } from '../extract/pipeline';
 import { htmlToText } from '../extract/text';
 import { cleanFilename, storeDocument } from '../store';
 import { refreshDocStatus } from '../status';
@@ -61,9 +61,44 @@ documents.post('/documents', async (c) => {
     );
     return c.json({ duplicate: true, document: doc ? toDocument(doc) : null }, 200);
   }
-  c.executionCtx.waitUntil(processDocument(c.env, r.id).catch(() => {}));
+  // Text is read now; a photo or scanned PDF waits for the sweeper (each minute), which has time.
+  c.executionCtx.waitUntil(processDocument(c.env, r.id, { quick: true }).catch(() => {}));
   const doc = await first(c.env.DB, `SELECT ${DOC_COLUMNS} FROM documents d WHERE d.id = ?`, r.id);
   return c.json({ duplicate: false, document: toDocument(doc!) }, 201);
+});
+
+/** Largest reading copy accepted (the app makes them about 2,000 px on the long side). */
+const MAX_READING_COPY_BYTES = 3 * 1024 * 1024;
+
+/**
+ * A smaller JPEG of a photo, made by the app, that's sent to the model in place of the original
+ * (a full-size phone photo is slow to read and can be too big). The original is never changed.
+ * Raw body, image/jpeg.
+ */
+documents.post('/documents/:id/reading-copy', async (c) => {
+  const row = await loadDoc(c.env.DB, c.req.param('id'));
+  if (!String(row.mime).startsWith('image/'))
+    throw new ApiError(400, 'invalid', 'Only photos have a reading copy.');
+  if (row.status === 'discarded')
+    throw new ApiError(409, 'discarded', 'This document was discarded.');
+  if (Number(c.req.header('Content-Length') ?? 0) > MAX_READING_COPY_BYTES)
+    throw new ApiError(413, 'too_large', 'The reading copy is too large.');
+  const bytes = new Uint8Array(await c.req.arrayBuffer());
+  if (bytes.byteLength > MAX_READING_COPY_BYTES)
+    throw new ApiError(413, 'too_large', 'The reading copy is too large.');
+  if (sniffMime(bytes) !== 'image/jpeg')
+    throw new ApiError(415, 'unsupported', 'The reading copy must be a JPEG.');
+  await c.env.FILES.put(readingCopyKey(String(row.id)), bytes, {
+    httpMetadata: { contentType: 'image/jpeg' },
+    customMetadata: { document_id: String(row.id), reading_copy: '1' },
+  });
+  // A photo waiting on a retry (say its first read was cut off) is due again now, from the copy.
+  await c.env.DB.prepare(
+    "UPDATE documents SET next_attempt_at = NULL WHERE id = ? AND status IN ('pending', 'failed')",
+  )
+    .bind(String(row.id))
+    .run();
+  return c.json({ ok: true });
 });
 
 documents.get('/documents', async (c) => {
@@ -199,7 +234,7 @@ documents.post('/documents/:id/reprocess', async (c) => {
   )
     .bind(nowIso(), row.id)
     .run();
-  c.executionCtx.waitUntil(processDocument(c.env, String(row.id)).catch(() => {}));
+  c.executionCtx.waitUntil(processDocument(c.env, String(row.id), { quick: true }).catch(() => {}));
   return c.json({ ok: true });
 });
 
@@ -225,8 +260,8 @@ documents.post('/documents/:id/discard', async (c) => {
       )
       .bind(nowIso(), row.id),
   ]);
-  // The file goes; the row stays as a record that it was received and discarded.
-  await c.env.FILES.delete(String(row.file_key));
+  // The file goes (and any reading copy); the row stays as a record that it was received and discarded.
+  await c.env.FILES.delete([String(row.file_key), readingCopyKey(String(row.id))]);
   return c.json({ ok: true });
 });
 
@@ -286,9 +321,9 @@ documents.post('/documents/:id/entries', async (c) => {
   return c.json(toEntry(e!), 201);
 });
 
-/** Runs the queue now instead of waiting for the next cron tick. */
+/** Reads what's quick to read now (text); the sweeper takes photos on its next run, each minute. */
 documents.post('/documents/process-now', async (c) => {
-  c.executionCtx.waitUntil(sweep(c.env, 5).catch(() => 0));
+  c.executionCtx.waitUntil(sweep(c.env, 5, { quick: true }).catch(() => 0));
   return c.json({ ok: true });
 });
 
@@ -303,6 +338,6 @@ documents.post('/documents/retry-failed', async (c) => {
   )
     .bind(now)
     .run();
-  c.executionCtx.waitUntil(sweep(c.env, 5).catch(() => 0));
+  c.executionCtx.waitUntil(sweep(c.env, 5, { quick: true }).catch(() => 0));
   return c.json({ ok: true, retried: res.meta.changes ?? 0, max_attempts: MAX_ATTEMPTS });
 });

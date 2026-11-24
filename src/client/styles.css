@@ -19,7 +19,14 @@
   --warn-tint: color-mix(in srgb, #d97706 13%, #f6f5f0);
   --ok: #15803d;
   --chip: #efefe9;
+  /* Sliding toggles and segmented controls: the chosen option's pill, its edge, and the track. */
   --seg: #ffffff;
+  --seg-edge: transparent;
+  --seg-track: var(--chip);
+  --seg-track-edge: transparent;
+  /* The same on an Insights panel, where the track is drawn over the card. */
+  --seg-panel: color-mix(in srgb, var(--ink) 4%, var(--surface));
+  --seg-panel-edge: color-mix(in srgb, var(--ink) 7%, transparent);
   --danger: #dc2626;
   --scrim: rgb(26 26 26 / 0.32);
   /* Phone tab bar: a floating glass capsule. Fill, a near-solid fill for reduced transparency,
@@ -64,7 +71,14 @@
     --warn-tint: color-mix(in srgb, #fbbf24 14%, #181818);
     --ok: #4ade80;
     --chip: #212121;
-    --seg: #313131;
+    /* --chip is the card colour here, so the chosen option is a blue-tinted pill with a blue
+       edge in a darker well: it reads against the page and a card alike. */
+    --seg: var(--accent-tint);
+    --seg-edge: color-mix(in srgb, var(--accent) 45%, transparent);
+    --seg-track: var(--bg);
+    --seg-track-edge: var(--line);
+    --seg-panel: var(--accent-tint);
+    --seg-panel-edge: var(--seg-edge);
     --danger: #ef4444;
     --scrim: rgb(0 0 0 / 0.55);
     --glass-fill: rgb(38 38 38 / 0.64);
@@ -104,7 +118,14 @@
   --warn-tint: color-mix(in srgb, #fbbf24 14%, #181818);
   --ok: #4ade80;
   --chip: #212121;
-  --seg: #313131;
+  /* --chip is the card colour here, so the chosen option is a blue-tinted pill with a blue
+     edge in a darker well: it reads against the page and a card alike. */
+  --seg: var(--accent-tint);
+  --seg-edge: color-mix(in srgb, var(--accent) 45%, transparent);
+  --seg-track: var(--bg);
+  --seg-track-edge: var(--line);
+  --seg-panel: var(--accent-tint);
+  --seg-panel-edge: var(--seg-edge);
   --danger: #ef4444;
   --scrim: rgb(0 0 0 / 0.55);
   --glass-fill: rgb(38 38 38 / 0.64);
@@ -145,6 +166,7 @@
   --color-ok: var(--ok);
   --color-chip: var(--chip);
   --color-seg: var(--seg);
+  --color-seg-track: var(--seg-track);
   --color-danger: var(--danger);
   --color-glass-label: var(--glass-label);
   --font-sans: 'Geist Variable', ui-sans-serif, -apple-system, 'Segoe UI', system-ui, sans-serif;
@@ -580,10 +602,10 @@
   background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
 .ins .pn [role='tablist'] > span {
-  background: color-mix(in srgb, var(--ink) 4%, var(--surface));
+  background: var(--seg-panel);
   box-shadow:
     0 1px 2px rgb(0 0 0 / 0.14),
-    0 0 0 1px color-mix(in srgb, var(--ink) 7%, transparent);
+    0 0 0 1px var(--seg-panel-edge);
 }
 
 /* charts */
